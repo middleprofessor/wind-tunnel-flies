@@ -1,0 +1,4 @@
+"0","ggplot(data = simons,"
+"0","       aes(x = line,"
+"0","           y = wind_speed)) +"
+"0","  geom_jitter(width = 0.1)"

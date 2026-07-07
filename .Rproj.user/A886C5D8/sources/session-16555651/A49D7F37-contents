@@ -50,6 +50,9 @@ source(here("code", "ggptm.R"))
 
 data_folder <- "data"
 
+# constants
+dial_to_speed <- 6.42237212 # from my smoke test with screens and forcing through origin
+
 ```
 
 
@@ -62,23 +65,24 @@ subfolder <- "burst speed/simons-walker "
 filename <- "Wind Tunnel minus days>6.xlsx"
 in_path <- here(data_folder, subfolder, filename)
 
-simons <- read_xlsx(in_path) |>
+simons <- read_xlsx(in_path,
+                    range = "A1:H108") |>
   clean_names() |>
   data.table()
 
 simons[, id := .I]
 simons[, treatment := factor(treatment, levels = c("CN", "AA"))]
 simons[, sex := factor(sex, levels = c("M", "F"))]
-simons[, line := paste(treatment, line) |>
-       factor(levels = c("CN 1", "CN 2", "AA 1", "AA 2"))]
-
+simons[, line := paste0(treatment, line) |>
+       factor(levels = c("CN1", "CN2", "AA1", "AA2"))]
+simons[, wind_speed := dial_50 * dial_to_speed]
 ```
 
 
 ```{r simons-init-plot}
 ggplot(data = simons,
-       aes(x = treatment,
-           y = vmax_2026)) +
+       aes(x = line,
+           y = wind_speed)) +
   geom_jitter(width = 0.1)
 ```
 
@@ -245,7 +249,7 @@ for(i in 1:length(files)){
 ```{r jess-summary}
 
 # first compute max within each id
-jess_max_id <- jess[, .(wind_max = mean(wind_jaw),
+jess_max_id <- jess[, .(wind_max = mean(wind_jess),
                         vel_max = mean(vel),
                         N = .N),
      by = .(date, treatment, line, sex, id)]
@@ -257,6 +261,39 @@ jess_sum <- jess_max_id[, .(wind_max = mean(wind_max),
 setorder(jess_sum, sex, treatment, line, date)
 ```
 
+```{r jess-analysis}
+lmm1 <- lmer(wind_max ~ treatment + (1 | line), data = jess_sum[sex == "f"])
+lmm1_means <- emmeans(lmm1, specs = "treatment")
+lmm1_pairs <- contrast(lmm1_means,
+                       method = "trt.vs.ctrl",
+                       adjust = "none") |>
+  summary(infer = TRUE)
+ggptm(lmm1, lmm1_means, lmm1_pairs,
+      nest_id = "line",
+      show_nest_data = TRUE)
+```
+
+## Combined
+
+```{r burst-combined-plot}
+burst1 <- data.table(
+  experiment = "Ind",
+  simons[, .SD, .SDcols = c("treatment", "line", "sex", "wind_speed")])
+burst2 <- data.table(
+  experiment = "Gr",
+  jess[, .SD, .SDcols = c("treatment", "line", "sex", "wind_jess")])
+setnames(burst2, old = "wind_jess", new = "wind_speed")
+burst <- rbind(burst1, burst2)
+burst[, exp_line := paste(line, experiment)]
+
+ggplot(data = burst,
+       aes(x = exp_line,
+           y = wind_speed)) +
+  geom_jitter(width = 0.1)
+
+
+
+```
 
 # Kinematic analysis
 
@@ -336,4 +373,10 @@ ggplot(data = free_flight_init[sex == "F"],
 #  geom_ancova(lm1) +
   theme_pubr()
 ```
+
+```{r}
+
+```
+
+
 # Wingshape analysis

@@ -1,0 +1,339 @@
+---
+title: "Drosophila Burst Speed"
+author: "Jeff Walker"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, echo=FALSE}
+# wrangling packages
+library(data.table) # magical data frames
+library(here) # here makes a project transportable
+library(janitor) # clean_names
+library(readxl) # read_excel, duh!
+library(writexl) # write_xlsx, duh!
+library(stringr) # text wrangling
+
+# analysis packages
+library(lme4)
+library(lmerTest)
+library(emmeans) # the workhorse for inference
+
+
+# graphing packages
+library(ggsci) # color palettes
+library(ggpubr) # publication quality plots
+library(ggforce) # better jitter
+library(cowplot) # combine plots
+library(knitr) # kable tables
+library(kableExtra) # kable_styling tables
+
+# ggplot_the_model.R packages not loaded above
+library(insight)
+library(lazyWeave)
+library(afex) # aov4
+
+# use here from the here package
+here <- here::here
+# use clean_names from the janitor package
+clean_names <- janitor::clean_names
+# use transpose from data.table
+transpose <- data.table::transpose
+
+# load functions used by this text written by me
+# ggplot_the_model.R needs to be in the folder "R"
+# if you didn't download this and add to your R folder in your
+# project, then this line will cause an error
+
+source(here("code", "ggplot_the_model.R"))
+source(here("code", "ggptm.R"))
+
+data_folder <- "data"
+
+```
+
+
+# Burst analysis
+
+The analysis is tricky because there are only 2 replicates. Comparing male AA1 vs male CN2 is valid but is specific to these replicates. To generalize, would need to take means of replicates. But then we have only n = 2! Also, sex also adds unwarrented df because it really is a random variable with two groups.
+
+```{r import}
+subfolder <- "burst speed/simons-walker "
+filename <- "Wind Tunnel minus days>6.xlsx"
+in_path <- here(data_folder, subfolder, filename)
+
+simons <- read_xlsx(in_path) |>
+  clean_names() |>
+  data.table()
+
+simons[, id := .I]
+simons[, treatment := factor(treatment, levels = c("CN", "AA"))]
+simons[, sex := factor(sex, levels = c("M", "F"))]
+simons[, line := paste(treatment, line) |>
+       factor(levels = c("CN 1", "CN 2", "AA 1", "AA 2"))]
+
+```
+
+
+```{r simons-init-plot}
+ggplot(data = simons,
+       aes(x = treatment,
+           y = vmax_2026)) +
+  geom_jitter(width = 0.1)
+```
+
+
+```{r simons-sample-means}
+
+simons_summary <- simons[, .(vmax_2026 = mean(vmax_2026)), by = .(treatment, sex, line)]
+simons_summary
+```
+
+```{r simons-speed-vs-weight}
+lm_ancova <- lm(vmax_2026 ~ treatment * sex + mass + room_temp, data = simons)
+coef(summary(lm_ancova))
+
+ggplot(data = simons,
+       aes(x = mass,
+           y = vmax_2026,
+           color = treatment)) +
+  geom_point() +
+#  geom_ancova(lm_ancova) +
+  NULL
+
+ggplot(data = simons,
+       aes(x = room_temp,
+           y = vmax_2026,
+           color = treatment)) +
+  geom_point() +
+#  geom_ancova(lm_ancova) +
+  NULL
+```
+
+Two lm models are fit
+
+1. ~ treatment on line-aggregated data (n = 2) within sex
+2. ~ treatment 
+
+```{r simons-aggregate-model}
+simons_agg <- simons[, .(vmax_2026 = mean(vmax_2026)), by = .(treatment, sex, random_line)]
+
+lm1 <- lm(vmax_2026 ~ treatment * sex, data = simons_agg)
+lm1_emm <- emmeans(lm1, specs = c("treatment", "sex"))
+lm1_pairs <- contrast(lm1_emm,
+                      method = "revpairwise",
+                      simple = "each",
+                      combine = TRUE,
+                      adjust = "none") |>
+  summary(infer = TRUE)
+
+set.seed(5)
+gg1 <- ggplot_the_model(lm1, lm1_emm, lm1_pairs,
+                        y_label = "Speed (cm/s)",
+                        effect_label = "Effect (cm/s)")
+
+gg2 <- ggplot_the_response(lm1, lm1_emm, lm1_pairs,
+                        y_label = "Max Burst Speed (cm/s)")
+
+gg1
+gg2
+```
+
+
+```{r simons-lmm-random-intercept}
+lmm_all <- lmer(vmax_2026 ~ treatment * sex + room_temp + (1 | line), data = simons)
+
+lmm_all_emm <- emmeans(lmm_all, specs = c("treatment", "sex"))
+
+cn_m <- c(1,0,0,0)
+aa_m <- c(0,1,0,0)
+cn_f <- c(0,0,1,0)
+aa_f <- c(0,0,0,1)
+aa_contrast <- list(
+  list(male = aa_m - cn_m),
+  list(female = aa_f - cn_f)
+)
+
+lmm_all_pairs <- contrast(lmm_all_emm,
+                      method = aa_contrast) |>
+  summary(infer = TRUE)
+
+lmm_all_emm
+lmm_all_pairs
+
+```
+
+
+Some plots
+
+```{r}
+ggptm(lmm_all, lmm_all_emm, lmm_all_pairs, show_nest_data = TRUE, nest_id = "line")
+```
+
+
+```{r}
+set.seed(1) # for jitter
+
+
+group_list <- c( "CN M 1", "CN M 2", "CN F 1", "CN F 2", "AA M 1", "AA M 2", "AA F 1", "AA F 2")
+simons[, group := paste(treatment, sex, line) |>
+        factor(levels = group_list)]
+simons[, x := as.integer(group) + rnorm(n = nrow(simons), sd = 0.1)]
+
+label_list <- str_replace_all(group_list, " ", "\n")
+ggplot(data = simons,
+       aes(x = x,
+           y = vmax_2026)) +
+  geom_point() +
+  scale_x_continuous(breaks = 1:8, labels = label_list) +
+  ylab("Max Burst Speed (cm/s)") +
+  theme_pubr()
+```
+
+## Jess Wheeler data
+
+```{r jess-raw-import}
+
+subfolder <- "burst speed/jess wheeler/sent from jess/raw"
+subfolder_path <- here(data_folder, subfolder)
+
+files <- list.files(
+  path = subfolder_path,
+  pattern = "\\.xlsx$",
+  full.names = TRUE
+)
+
+filename <- "02.21.10 combined.xlsx"
+in_path <- here(data_folder, subfolder, filename)
+
+jess <- data.table(NULL)
+
+for(i in 1:length(files)){
+  in_path <- files[i]
+  
+  file_i <- read_xlsx(in_path,
+                    range = "a1:c1000") |>
+    clean_names() |>
+    data.table() |>
+    na.omit()
+  # angle is flight angle in degrees from 1,0
+  # length is flight distance over 1 frame
+  colnames(file_i)[1] <- "id"
+  file_i[, treatment := substr(id,1,2)]
+  file_i[, line := substr(id,1,3)]
+  file_i[, sex := substr(id, 4,4)]
+  file_i[, dial := substr(id, 5,6) |> as.integer()]
+  file_i[, date := substr(id, 8,15)]
+  
+  # performance measures
+  file_i[, theta := ifelse(angle < 0,
+                         -(angle + 180),
+                         180-angle)]
+  file_i[, wind_jess := 7.3888 * dial]
+  file_i[, wind_jaw := 6.42237212 * dial]
+  file_i[, disp.x := length * cos(theta * pi/180)]
+  file_i[, disp.y := length * sin(theta * pi/180)]
+  file_i[, wind.x := wind_jess / 30]
+  file_i[, vel := sqrt((wind.x + disp.x)^2 + disp.y^2) * 30]
+  
+  jess <- rbind(jess, file_i)
+  
+}
+
+```
+
+```{r jess-summary}
+
+# first compute max within each id
+jess_max_id <- jess[, .(wind_max = mean(wind_jaw),
+                        vel_max = mean(vel),
+                        N = .N),
+     by = .(date, treatment, line, sex, id)]
+
+jess_sum <- jess_max_id[, .(wind_max = mean(wind_max),
+                            vel_max = mean(vel_max),
+                    N = .N), 
+     by = .(date, sex, treatment, line)]
+setorder(jess_sum, sex, treatment, line, date)
+```
+
+
+# Kinematic analysis
+
+
+```{r free-flight-import}
+subfolder <- "kinematics/free flight/processed"
+filename <- "frequency data.xlsx"
+in_path <- here(data_folder, subfolder, filename)
+
+free_flight <- read_xlsx(in_path,
+                   sheet = "frequency data") |>
+  clean_names() |>
+  data.table() |>
+  na.omit() # safe there is one row with no data
+free_flight[, treatment := ifelse(treatment == "aa", "AA", "CN")]
+free_flight[, treatment := factor(treatment, levels = c("CN", "AA"))]
+free_flight[, sex := ifelse(sex == "m", "M", "F")]
+free_flight[, sex := factor(sex, levels = c("M", "F"))]
+
+tunnel <- free_flight[experiment == "tunnel"]
+```
+
+```{r}
+freq_f <- lm(f ~ treatment * v1, data = tunnel[sex == "F"])
+coef(summary(freq_f))
+
+gg_freq_f <- ggplot(data = tunnel[sex == "F"],
+                    aes(x = v1,
+                        y = f,
+                        color = treatment)) +
+  geom_point() +
+  geom_ancova(freq_f) +
+  theme_pubr()
+
+freq_m <- lm(f ~ treatment * v1, data = tunnel[sex == "M"])
+coef(summary(freq_m))
+
+gg_freq_m <- ggplot(data = tunnel[sex == "M"],
+                    aes(x = v1,
+                        y = f,
+                        color = treatment)) +
+  geom_point() +
+  geom_ancova(freq_m) +
+  theme_pubr()
+
+plot_grid(gg_freq_m, gg_freq_f, ncol = 2)
+```
+
+
+```{r free-flight-import}
+subfolder <- "kinematics/free flight/processed"
+filename <- "init_data.xlsx"
+in_path <- here(data_folder, subfolder, filename)
+
+free_flight_init <- read_xlsx(in_path,
+                   sheet = "init_data") |>
+  clean_names() |>
+  data.table()
+setnames(free_flight_init, old = "treat", new = "treatment")
+free_flight_init[, treatment := ifelse(treatment == "aa", "AA", "CN")]
+free_flight_init[, treatment := factor(treatment, levels = c("CN", "AA"))]
+free_flight_init[, sex := ifelse(sex == "m", "M", "F")]
+free_flight_init[, sex := factor(sex, levels = c("M", "F"))]
+
+free_flight_init[, v_bar := (v1+v2)/2]
+```
+
+```{r}
+lm1 <- lm(f ~ treatment + v_bar, data = free_flight_init[sex == "F"])
+coef(summary(lm1))
+
+ggplot(data = free_flight_init[sex == "F"],
+       aes(x = v_bar,
+           y = f,
+           color = treatment)) +
+  geom_point() +
+#  geom_ancova(lm1) +
+  theme_pubr()
+```
+# Wingshape analysis

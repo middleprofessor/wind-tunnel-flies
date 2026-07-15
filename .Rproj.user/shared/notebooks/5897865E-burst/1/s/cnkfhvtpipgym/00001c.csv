@@ -1,0 +1,8 @@
+"0",""
+"0","ggplot(data = simons,"
+"0","       aes(x = room_temp,"
+"0","           y = wind_speed,"
+"0","           color = treatment)) +"
+"0","  geom_point() +"
+"0","#  geom_ancova(lm_ancova) +"
+"0","  NULL"

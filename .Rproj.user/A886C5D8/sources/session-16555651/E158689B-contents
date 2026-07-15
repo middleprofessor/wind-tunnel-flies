@@ -1,0 +1,2374 @@
+# Plot Functions
+ this is the official plot the model code.
+ update - the official plot the model code has moved to the new Experimental Statistics quarto project
+ 
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# wrangling
+library(data.table)
+library(stringr)
+library(forcats)
+
+# analysis
+library(nlme)
+library(lmerTest)
+library(emmeans)
+library(MASS)
+library(DHARMa)
+
+# plot function
+library(ggplot2)
+library(ggpubr)
+library(ggforce)
+library(insight)
+library(cowplot)
+library(lazyWeave) #pretty p-values
+library(rstatix) # even prettier p-values
+
+pal_okabe_ito <- c(
+  "#E69F00",
+  "#56B4E9",
+  "#009E73",
+  "#F0E442",
+  "#0072B2",
+  "#D55E00",
+  "#CC79A7"
+)
+pal_okabe_ito_blue <- pal_okabe_ito[c(5,6,1,2,3,7,4)] 
+pal_okabe_ito_red <- pal_okabe_ito[c(6,5,3,1,2,7,4)] 
+pal_okabe_ito_2 <- pal_okabe_ito[c(5,6)]
+pal_okabe_ito_3 <- pal_okabe_ito[c(5,6,7)]
+pal_okabe_ito_3_light <- pal_okabe_ito[c(1,2,7)]
+pal_okabe_ito_4 <- pal_okabe_ito[c(5,6,7,2)]
+
+```
+
+```{r}
+# this is the official simulator function from grcbds.Rmd in the book
+simulator <- function(
+  seed_i = 1,
+  n_sim = 1,
+  n_treat = 3, # tau
+  n_block = 6, # beta_1, number of (nested) blocks
+  n_rep = 1, # eta, number of experimental replicates
+  n_ss = 1, # epsilon, number of subsamples within each block:treatment.
+  n_exp = 1, # number of experiments
+  design = "rcbd", # if rcbd, then all treatments within block. If "pseudoreplicated", then single treatment per block and all replicates within block are subsamples.
+  unique_id = TRUE, # give unique ids to values of all factors
+  treatment_crossed_with = "block", # not used. alternat is "rep". If "block" then treatment is applied to block and reps across block:treatment differ. If "rep" then treatment is applied to subblock (the replicate) and reps across block:treatment are same. This makes "rep" a block nested within "block"
+  correlated_slopes = FALSE, # TRUE uses random int/slope model to generate data
+  beta = c(10, 0, 0), # effects
+  gamma = c(0.5, 0.5), # sd of random intercept and slopes for non-ref
+  rho = c(0.6, 0.6, 0.6), # r between random intercept and slopes
+  sigma_exp = 0, # sd among experiments
+  sigma_exp.block = 1, # sd among exp:block (or block if n_exp = 1)
+  sigma_exp.treat = 0, # sd among exp:treat
+  sigma_exp.block.treat = c(0), # sd among exp:block:treat, this can be a vector
+  # (or block:treat if n_exp = 1). If not a vector, then vector created with value for each treatment. This creates heterogeneity of correlation
+  sigma_rep = 0, # sd among experimental replicates of treatment:block
+  sigma_ss = 0.3, # sd among subsamples within replication of treatment:block
+  equal_n = TRUE,
+  exp_name = "exp",
+  block_name = "block",
+  rep_name = "rep",
+  ss_name = "ss"
+){
+  # 1. default beta is for n_treat = 2. If > 2 then default adds 0 for each added level
+  # 2. default sigma is 1 for all treatment levels. Can specify heterogeneity by sending vector with sigma for each level of treatment
+  # 3. if correlated_slopes = TRUE, then default gamma c(0.5, 0.5) is sd for intercept (first element) and same slope (2nd element) for all non-reference levels. Can specify detail by sending vector with value for intercept in cell one and non-reference slopes in all other cells.
+  #  if correlated_slopes = FALSE, then default gamma c(0.5, 0.5) is sd for block (first element) and treatment:block combinations (2nd element).
+  # 4. default rho is 0.6 for all correlations between intercept and slopes and between slopes. Can specify by sending vector equivalent to lower triangular of correlation matrix
+  if(n_treat > 2 & length(beta) == 2){# fill out beta
+    beta <- c(beta, rep(0, n_treat-2))
+  }
+  if(length(sigma_exp.block.treat) == 1){#
+    sigma_exp.block.treat <- rep(sigma_exp.block.treat, n_treat)
+  }
+  if(length(gamma) == 2 &
+     design == "rcbd" &
+     correlated_slopes == TRUE &
+     n_treat > 2){# fill out gamma
+    gamma <- c(gamma[1], rep(gamma[2], (n_treat - 1)))
+  }
+  if(length(rho) == 1){# fill out rho
+    rho <- rep(rho, n_treat*(n_treat-1)/2)
+  }
+  if(length(sigma_ss) == 1){# fill out rho
+    sigma_ss <- rep(sigma_ss, n_treat)
+  }
+  
+  
+  N_reps <- n_block * n_treat * n_rep * n_exp
+  N <- N_reps * n_ss
+  # returns N by n_sim matrix of fake data. Each sim is in its own column. The first two columns are treatment and block 
+  treatment_levels <- c("Cn", "Tr1", "Tr2", "Tr3")[1:n_treat]
+
+  # if reps in blocks are experimental
+  if(design == "rcbd"){
+    exp_levels <- paste0(exp_name,
+                          sprintf("%02d", 1:n_exp))
+    block_levels <- paste0(block_name,
+                          sprintf("%02d", 1:n_block))
+    block.treat <- do.call(paste, expand.grid(block_levels,
+                                              treatment_levels))
+    rep_levels <- paste0(rep_name,
+                         sprintf("%02d", 1:n_rep))
+  }
+  # if reps in blocks are technical
+  if(design == "pseudoreplicated"){
+    if(n_block == 1){
+      block_levels <- paste0(block_name,
+                             sprintf("%02d", 1:n_block))
+    }else{
+      block_levels <- paste0(block_name,
+                             sprintf("%02d", 1:(n_block*n_treat)))
+    }
+      exp_levels <- paste0(exp_name,
+                           sprintf("%02d", 1:n_exp))
+      block.treat = paste(rep(block_levels, each = n_treat),
+                          treatment_levels)
+      rep_levels <- paste0(rep_name,
+                           sprintf("%02d", 1:n_rep))
+  }   
+  ss_levels <- paste0(ss_name,
+                      sprintf("%02d", 1:n_ss))
+  groups <- do.call(paste, expand.grid(exp_levels,
+                                       block.treat,
+                                       rep_levels,
+                                       ss_levels
+                                       ))
+  fake_data_all <- data.table(NULL)
+  fake_data_all[, c("exp", "block", "treatment", "rep", "ss") :=
+                  tstrsplit(groups, " ", fixed = TRUE)]
+  setorder(fake_data_all, exp, block, treatment, rep, ss)
+  
+  if(unique_id == TRUE){
+    fake_data_all[, exp_id := paste(
+      exp_name,
+      sprintf("%02d",
+              as.integer(factor(exp))),
+      sep = "_")]
+    fake_data_all[, block_id := paste(
+      block_name,
+      sprintf("%02d",
+              as.integer(factor(paste(exp, block)))),
+      sep = "_")]
+    fake_data_all[, rep_id := paste(
+      rep_name,
+      sprintf("%02d",
+              as.integer(factor(paste(block_id, treatment, rep)))),
+      sep = "_")]
+    fake_data_all[, ss_id := paste(
+      ss_name,
+      sprintf("%03d",
+              as.integer(factor(paste(rep_id, ss)))),
+      sep = "_")]
+  }
+
+  # make specific to experiment
+  if(exp_name != "exp"){
+    setnames(fake_data_all, "exp_id", exp_name)
+  }
+  if(block_name != "block"){
+    setnames(fake_data_all, "block_id", block_name)
+  }
+  if(rep_name != "rep"){
+    setnames(fake_data_all, "rep_id", rep_name)
+  }
+  if(ss_name != "ss"){
+    setnames(fake_data_all, "ss_id", ss_name)
+  }
+
+  # order factor levels
+  fake_data_all[, treatment := factor(treatment,
+                                      levels = treatment_levels)]
+  
+  # random component
+  # random variance matrix
+  # gamma[1] is std of random intercept u_0
+  # gamma[2] is std of random slope for first non-reference
+  #     treatment level
+  # gamma[3] is std of random slope for second non-reference
+  #     treatment level
+  # and so on
+  if(correlated_slopes == TRUE){
+    L <- diag(gamma)
+    Psi_R <- diag(length(gamma))
+    Psi_R[lower.tri(Psi_R, diag = FALSE)] <- rho
+    Psi_R <- t(Psi_R)
+    Psi_R[lower.tri(Psi_R, diag = FALSE)] <- rho
+    Psi <- L%*%Psi_R%*%L
+  }
+  
+  fd_mat <- matrix(as.numeric(NA), nrow = N, ncol = n_sim)
+  colnames(fd_mat) <- paste0("sim_", 1:n_sim)
+  # View(fake_data_all)
+  for(sim_i in 1:n_sim){
+    seed_i <- seed_i + 1
+    sim_seed <- seed_i
+    set.seed(sim_seed)
+    
+    # fixed component
+    X <- model.matrix(~ treatment,
+                      data = fake_data_all)
+    y_fixed <- (X %*% beta)[,1]
+    
+    # random coefficients
+    # matrix of correlated coefficients with
+    # n_block (number of block) rows, and
+    # n_rand (number of random effects) columns
+    
+    if(design == "rcbd"){# replicates within blocks are experimental reps
+      if(correlated_slopes == TRUE){
+        # random intercepts and slopes
+        # assumes correlation between slopes and intercepts
+        # Z <- model.matrix(~ 0 + block + block:treatment, data = fake_data_all)
+        # this generates combination columns for non-reference treatment levels
+        Z1 <- model.matrix(~ 0 + block +
+                             block:treatment,
+                           data = fake_data_all)
+        # random effects (coefficients)
+        # cols are gamma0, gamma1, ...
+        # rows are block
+        u_mat <- rmvnorm(n_block,
+                         sigma = Psi)
+        # flattened to a vector, order is
+        # g0 for id1..k, then
+        # g1 for id1..k, then...
+        u1 <- c(u_mat)
+      }else{ #if random intercept interaction model
+        if(n_exp > 1){ # nested
+          Z1a <- model.matrix(~ 0 + exp, data = fake_data_all)
+          Z1b <- model.matrix(~ 0 + exp:treatment, data = fake_data_all)
+          Z1c <- model.matrix(~ 0 + exp:block, data = fake_data_all)
+          Z1d <- model.matrix(~ 0 + exp:block:treatment,
+                              data = fake_data_all)
+          Z1 <- cbind(Z1a, Z1b, Z1c, Z1d)
+          u1 <- c(rnorm(n_exp, mean = 0, sd = sigma_exp),
+                  rnorm(n_exp*n_treat, mean = 0, sd = sigma_exp.treat),
+                  rnorm(n_exp*n_block, mean = 0, sd = sigma_exp.block),
+                  rnorm(n_exp*n_block*n_treat, mean = 0,
+                        sd = sigma_exp.block.treat))
+        }
+        if(n_exp == 1){
+          # random block:treatment intercept
+          # block:treatment intercept intercept functions as slope
+          # and is independent of block intercept
+          # this generates combination columns for *all* treatment levels
+          # differs from random intercept and slope which only generates
+          # slope coefs for non ref levels
+          Z1a <- model.matrix(~ 0 + block, data = fake_data_all)
+          Z1b <- model.matrix(~ 0 + block:treatment, data = fake_data_all)
+          Z1 <- cbind(Z1a, Z1b)
+          u1 <- c(rnorm(n_block, mean = 0,
+                        sd = sigma_exp.block),
+                  rnorm(n_block*n_treat, mean = 0,
+                        sd = rep(sigma_exp.block.treat, each = n_block)))          
+        }
+      }
+    }
+    if(design == "pseudoreplicated"){# replicates within block:treatment are technical reps
+      # random nested intercept
+      fake_data_all[, batch := paste0("batch_", as.integer(as.factor(paste(exp, block, treatment, rep))))]
+#      Z1 <- model.matrix(~ 0 + rep_id, data = fake_data_all)
+      Z1 <- model.matrix(~ 0 + batch, data = fake_data_all)
+      u1 <- rnorm(N_reps, mean = 0, sd = sigma_rep)
+    }
+    
+    # random intercepts for replicated block:treatment
+    # if there is no subsampling within replicate, then these columns are not 
+    # in the specified model (because only one measure of each
+    # block:treatment:experiment combo) - that is, these columns
+    # collapse and add to the residual = subsampled error
+    # ijk - ith treatment, jth block, kth replicate
+    if(design == "rcbd"){
+      # if n_exp == 1 then cannot add exp to combination
+      # if n_rep == 1 then cannot add rep to combination
+      if(n_rep == 1 & n_exp == 1){
+        Z2 <- model.matrix(~ 0 + block:treatment,
+                           data = fake_data_all)
+        colnames(Z2) <- paste0(colnames(Z2), ":rep_1")
+      }
+      if(n_rep == 1 & n_exp > 1){
+        Z2 <- model.matrix(~ 0 + exp:block:treatment,
+                           data = fake_data_all)
+        colnames(Z2) <- paste0(colnames(Z2), ":rep_1")
+      }
+      if(n_rep > 1 & n_exp == 1){
+          Z2 <- model.matrix(~ 0 + block:treatment:rep,
+                             data = fake_data_all)
+        }
+      if(n_rep > 1 & n_exp > 1){
+          Z2 <- model.matrix(~ 0 + exp:block:treatment:rep,
+                             data = fake_data_all)
+        }
+    }else{
+      Z2 <- NULL
+    }
+
+    # add random block:treatment:rep intercepts
+    if(design == "rcbd"){
+      u2 <- rnorm(N_reps, mean = 0, sd = sigma_rep)
+    }else{
+      u2 <- NULL
+    }
+    
+    # random intercepts for subsampling within replicates = n_rep * n_treat * n_block
+    # ijkm ith treatment, jth block, kth replicate, mth subsample
+    # this is just the residual error so don't need coefficients
+
+    u <- c(u1, u2)
+    
+    # put it all together
+    Z <- cbind(Z1, Z2)
+    e_ss <- rnorm(N, mean = 0, sd = sigma_ss[1])
+    y_rand <- (Z %*% u)[,1] + e_ss
+    
+    # check!
+    # colnames(Z) <- 1:ncol(Z)
+    # head(cbind(fake_data_all[,1:3], Z))
+    # u_mat
+    # u
+    
+    # double check!
+    # fake_y <- rnorm(nrow(fake_data_all))
+    # lForm <- lFormula(fake_y ~ treatment + (treatment | block),
+    #                   fake_data_all)    # lme4's function to process a model formula
+    # Z1 <- t(as.matrix(lForm$reTrms$Zt))
+    # u1 <- t(c(t(u_mat)))[1,]
+    # y_rand2 <- (Z1 %*% u1)[,1]
+    
+    fd_mat[, sim_i] <- y_fixed + y_rand
+  }
+  fake_data_all <- cbind(fake_data_all,
+                         fd_mat)
+  return(fake_data_all)
+}
+```
+
+
+```{r holm-sidak}
+
+holm_sidak <- function(p){
+  # assume alpha = 0.05
+  n <- length(p)
+  rank_p <- frank(p)
+  inv_rank_p <- n - rank_p + 1
+  
+  # put pvalues and the inv rankings in rank order
+  p_order <- p[order(p)]
+  inv_rank_order <- inv_rank_p[order(p)]
+  
+  # compute the adjusted p-value
+  p_holm_sidak_order <- (1 - (1 - p_order)^(inv_rank_order))
+  
+  # adjusted p-values of higher rank cannot be less than adjusted p-value of lower rank
+  # so find and adjust these
+  for(j in 2:n){
+    if(p_holm_sidak_order[j] < p_holm_sidak_order[j-1]){
+      p_holm_sidak_order[j] <- p_holm_sidak_order[j-1]
+    }
+  }
+  
+  # any adjusted > 1 make 1
+  p_holm_sidak_order[p_holm_sidak_order > 1.0] <- 1.0
+  
+  # put back into original order
+  p_holm_sidak <- p_holm_sidak_order[rank_p]
+  return(p_holm_sidak)
+}
+
+```
+
+```{r pairwise_paired_tt}
+pairwise_paired_tt <- function(
+    y_col, # response column
+    g_col, # grouping column
+    id_col = NULL, # id column for paired t
+    paired = TRUE,
+    data){
+  
+  keep <- c(y_col, g_col, id_col)
+  
+#  dt_long <- data.table(data)[, .SD, .SDcols = keep]
+  dt_long <- data[, .(y = mean(get(y_col))),
+                  by = .(get(g_col), get(id_col))]
+  setnames(dt_long, old = names(dt_long), new = c(g_col, id_col, y_col))
+  dt_wide <- dcast(dt_long,
+                   formula(paste(id_col, g_col, sep = "~")),
+                   value.var = y_col)
+  g_levels <- names(dt_wide)[-1]
+  n_groups <- length(g_levels)
+  
+  contrast_table <- matrix(as.numeric(NA),
+                           nrow = n_groups*(n_groups-1)/2,
+                           ncol = 8) |>
+    data.table()
+  colnames(contrast_table) <- c("contrast", "estimate", "SE", "df", "lower.CL", "upper.CL", "t.ratio", "p.value")
+  contrast_table[, contrast := as.character(contrast)]
+
+  l <- 0;
+  for(i in 2:n_groups){
+    for(j in 1:(i-1)){
+      l <- l+1
+      ttest_ij <- t.test(dt_wide[, get(g_levels[i])],
+                         dt_wide[, get(g_levels[j])],
+                         paired = TRUE,
+                         na.action = "na.omit")
+      contrast_table[l, contrast := paste(g_levels[i], g_levels[j], sep = "-")]
+      contrast_table[l, estimate := ttest_ij$estimate]
+      contrast_table[l, SE := ttest_ij$estimate/ttest_ij$statistic]
+      contrast_table[l, df := ttest_ij$parameter]
+      contrast_table[l, lower.CL := ttest_ij$conf.int[1]]
+      contrast_table[l, upper.CL := ttest_ij$conf.int[2]]
+      contrast_table[l, t.ratio := ttest_ij$statistic]
+      contrast_table[l, p.value := ttest_ij$p.value]
+    }
+  }
+  
+
+  return(contrast_table)
+}
+
+```
+
+```{r pptt-old}
+pptt_old <- function(
+    model_formula,
+    data){
+  
+  # a formula versions of pairwise_paired_tt
+  
+  variables <- find_variables(model_formula)
+  y_col <- variables$response
+  g_col <- variables$conditional[1]
+  id_col <- variables$conditional[2]
+  keep <- c(y_col, g_col, id_col)
+  
+  # get means of subsampled replicates, if these exist
+  dt_long <- data.table(data)[, .SD, .SDcols = keep]
+  dt_long <- data[, .(y = mean(get(y_col))),
+                  by = .(get(g_col), get(id_col))]
+  setnames(dt_long, old = names(dt_long), new = c(g_col, id_col, y_col))
+
+  # pairwise
+  dt_wide <- dcast(dt_long,
+                   formula(paste(id_col, g_col, sep = "~")),
+                   value.var = y_col)
+  g_levels <- names(dt_wide)[-1]
+  n_groups <- length(g_levels)
+  
+  fit_pairs <- matrix(as.numeric(NA),
+                           nrow = n_groups*(n_groups-1)/2,
+                           ncol = 8) |>
+    data.table()
+  colnames(fit_pairs) <- c("contrast", "estimate", "SE", "df", "lower.CL", "upper.CL", "t.ratio", "p.value")
+  fit_pairs[, contrast := as.character(contrast)]
+
+  l <- 0;
+  for(i in 2:n_groups){
+    for(j in 1:(i-1)){
+      l <- l+1
+      ttest_ij <- t.test(dt_wide[, get(g_levels[i])],
+                         dt_wide[, get(g_levels[j])],
+                         paired = TRUE,
+                         na.action = "na.omit")
+      fit_pairs[l, contrast := paste(g_levels[i], g_levels[j], sep = " - ")]
+      fit_pairs[l, estimate := ttest_ij$estimate]
+      fit_pairs[l, SE := ttest_ij$estimate/ttest_ij$statistic]
+      fit_pairs[l, df := ttest_ij$parameter]
+      fit_pairs[l, lower.CL := ttest_ij$conf.int[1]]
+      fit_pairs[l, upper.CL := ttest_ij$conf.int[2]]
+      fit_pairs[l, t.ratio := ttest_ij$statistic]
+      fit_pairs[l, p.value := ttest_ij$p.value]
+    }
+  }
+  
+
+  return(fit_pairs)
+}
+
+```
+
+```{r pptt}
+pptt <- function(
+    model_formula,
+    method = "revpairwise",
+    simple = NULL, # can be "each" or any of the factor names
+    data){
+  
+  
+  # a formula versions of pairwise_paired_tt
+  
+  # more elegant
+  # m1 <- lmer(model_formula, data) # works only with (1 | random) and will fail if model fails
+  # variables <- find_variables(m1)
+  # y_col <- variables$response
+  # id_col <- variables$random
+  # x_cols <- variables$conditional
+  # fac1_col <- x_cols[1]
+
+  # m1 <- aov_4(model_formula, data) # works only with (factor | random) but won't generally fail
+  # variables <- find_variables(m1)
+  # y_col <- variables$response
+  # id_col <- variables$random
+  # x_cols <- variables$fixed
+  # fac1_col <- x_cols[1]
+  
+  # less elegant but less fussy because works with both (1 | random) and (factor | random)
+  m1 <- model_formula
+  variables <- find_variables(m1)
+  y_col <- variables$response
+  x_cols <- variables$conditional
+  n_x_cols <- length(x_cols)
+  id_col <- x_cols[n_x_cols]
+  x_cols <- x_cols[-n_x_cols]
+  fac1_col <- x_cols[1]
+  
+  # make sure fac1 is a factor
+  data[, ..fac1_col := factor(get(fac1_col))]
+  
+  fac2_col <- NULL
+  if(length(x_cols) == 2){
+    fac2_col <- x_cols[2]
+    data[, ..fac2_col := factor(get(fac2_col))]
+    levels_1 <- levels(data[, get(fac1_col)])
+    levels_2 <- levels(data[, get(fac2_col)])
+    levels_flat <- paste(rep(levels_1, length(levels_2)), rep(levels_2, each = length(levels_1)))
+    data[, flat := paste(get(x_cols[1]), get(x_cols[2])) |> factor(levels = levels_flat)]
+    g_col <- "flat"
+  }else{
+    g_col <- x_cols
+  }
+  keep <- c(y_col, g_col, id_col)
+  
+  # get means of subsampled replicates, if these exist
+  dt_long <- data[, .(y = mean(get(y_col))),
+                  by = .(get(g_col), get(id_col))]
+  setnames(dt_long, old = names(dt_long), new = c(g_col, id_col, y_col))
+
+  # pairwise
+  dt_wide <- dcast(dt_long,
+                   formula(paste(id_col, g_col, sep = "~")),
+                   value.var = y_col)
+  g_levels <- names(dt_wide)[-1]
+  n_groups <- length(g_levels)
+  
+  fit_pairs <- matrix(as.numeric(NA),
+                           nrow = n_groups*(n_groups-1)/2,
+                           ncol = 8) |>
+    data.table()
+  fit_pairs_colnames <- c("contrast", "estimate", "SE", "df", "lower.CL", "upper.CL", "t.ratio", "p.value")
+  colnames(fit_pairs) <- fit_pairs_colnames
+  fit_pairs[, contrast := as.character(contrast)]
+
+  if(method == "revpairwise"){
+    l <- 0;
+    for(i in 2:n_groups){
+      for(j in 1:(i-1)){
+        l <- l+1
+        ttest_ij <- t.test(dt_wide[, get(g_levels[i])],
+                           dt_wide[, get(g_levels[j])],
+                           paired = TRUE,
+                           na.action = "na.omit")
+        fit_pairs[l, contrast := paste(g_levels[i], g_levels[j], sep = " - ")]
+        fit_pairs[l, estimate := ttest_ij$estimate]
+        fit_pairs[l, SE := ttest_ij$estimate/ttest_ij$statistic]
+        fit_pairs[l, df := ttest_ij$parameter]
+        fit_pairs[l, lower.CL := ttest_ij$conf.int[1]]
+        fit_pairs[l, upper.CL := ttest_ij$conf.int[2]]
+        fit_pairs[l, t.ratio := ttest_ij$statistic]
+        fit_pairs[l, p.value := ttest_ij$p.value]
+      }
+    }
+  }
+  if(!is.null(simple)){
+    fit_pairs[, c("first", "second") := tstrsplit(contrast, " - ")]
+    fit_pairs[, c("first.fac1", "first.fac2") := tstrsplit(first, " ")]
+    fit_pairs[, c("second.fac1", "second.fac2") := tstrsplit(second, " ")]
+    set_1 <- which(fit_pairs$first.fac1 == fit_pairs$second.fac1)
+    set_2 <- which(fit_pairs$first.fac2 == fit_pairs$second.fac2)
+    if(simple == "each"){
+      fit_pairs <- fit_pairs[c(set_1, set_2),]
+    }
+    if(simple == fac1_col){
+      fit_pairs <- fit_pairs[set_2,]
+    }
+    if(simple == fac2_col){
+      fit_pairs <- fit_pairs[set_1,]
+    }
+    # fit_pairs[, i := .I]
+    # fit_pairs <- setorder(fit_pairs, -i)
+  }
+  fit_pairs <- fit_pairs[, .SD, .SDcols = fit_pairs_colnames]
+  return(fit_pairs)
+}
+
+```
+
+```{r gg_pptt}
+gg_pptt <- function(
+    aov_formula,
+    data){
+  
+  fit <- aov_4(aov4_formula, data)
+  y_col <- find_response(fit)
+  g_col <- find_predictors(fit)$fixed
+  id_col <- find_random(fit)$random
+  keep <- c(y_col, g_col, id_col)
+  
+  
+  # get means of subsampled replicates, if these exist
+  dt_long <- data.table(data)[, .SD, .SDcols = keep]
+  dt_long <- data[, .(y = mean(get(y_col))),
+                  by = .(get(g_col), get(id_col))]
+  setnames(dt_long, old = names(dt_long), new = c(g_col, id_col, y_col))
+  dt_long[, gg_treatment := get(g_col)]
+  dt_long[, gg_y := get(y_col)]
+
+  # get SE of each treatment level (equals fit_emm if same sample size)
+  m1 <- gls(gg_y ~ gg_treatment,
+            weights = varIdent(form = ~ 1 | gg_treatment),
+            dt_long)
+  fit_emm <- emmeans(m1, specs = "gg_treatment") |>
+    summary() |>
+    data.table()
+  # convert fit_emm back to user col names
+  setnames(fit_emm, old = "gg_treatment", new = g_col)
+  # convert m1 back to user col names
+  m1$call$model <- as.formula(paste(y_col, "~", g_col))
+  m1$call$weights$form <- as.formula(paste("~ 1 |", g_col))
+  
+  # pairwise
+  dt_wide <- dcast(dt_long,
+                   formula(paste(id_col, g_col, sep = "~")),
+                   value.var = y_col)
+  g_levels <- names(dt_wide)[-1]
+  n_groups <- length(g_levels)
+  
+  fit_pairs <- matrix(as.numeric(NA),
+                           nrow = n_groups*(n_groups-1)/2,
+                           ncol = 8) |>
+    data.table()
+  colnames(fit_pairs) <- c("contrast", "estimate", "SE", "df", "lower.CL", "upper.CL", "t.ratio", "p.value")
+  fit_pairs[, contrast := as.character(contrast)]
+
+  l <- 0;
+  for(i in 2:n_groups){
+    for(j in 1:(i-1)){
+      l <- l+1
+      ttest_ij <- t.test(dt_wide[, get(g_levels[i])],
+                         dt_wide[, get(g_levels[j])],
+                         paired = TRUE,
+                         na.action = "na.omit")
+      fit_pairs[l, contrast := paste(g_levels[i], g_levels[j], sep = " - ")]
+      fit_pairs[l, estimate := ttest_ij$estimate]
+      fit_pairs[l, SE := ttest_ij$estimate/ttest_ij$statistic]
+      fit_pairs[l, df := ttest_ij$parameter]
+      fit_pairs[l, lower.CL := ttest_ij$conf.int[1]]
+      fit_pairs[l, upper.CL := ttest_ij$conf.int[2]]
+      fit_pairs[l, t.ratio := ttest_ij$statistic]
+      fit_pairs[l, p.value := ttest_ij$p.value]
+    }
+  }
+  
+
+  return(list(model = m1, emmeans = fit_emm, contrast = fit_pairs))
+}
+
+```
+
+```{r twoway-fmt_p_value_2, echo=FALSE, warning=FALSE, message=FALSE}
+fmt_p_value_2 <- function(p, digits = 0.0001){
+  p_char <- ifelse(p < 0.06 | is.na(p),
+                   scales::pvalue(p,
+                                  accuracy = ifelse(
+                                    (10^-(ceiling(-log10(p)) + 1)) < digits,
+                                    digits,
+                                    (10^-(ceiling(-log10(p)) + 1)))),
+                   scales::pvalue(p, accuracy = 0.01))
+}
+fmt_p_value_rmd <- function(x, digits = 0.0001){
+  return(sapply(x, fmt_p_value_2, digits))
+}
+```
+
+```{r}
+fmt_table <- function(df, digits = 0.0001){
+  
+}
+```
+
+```{r odd-even}
+odd <- function(x) x%%2 != 0
+even <- function(x) x%%2 == 0
+```
+
+```{r not_in}
+'%not_in%' <- Negate('%in%')
+```
+
+```{r}
+factor_wrap <- function(gg, sep = " "){
+  x_labels <- layer_scales(gg)$x$get_limits()
+  label_x <- str_replace(x_labels, sep, "\n")
+  gg <- gg +
+    scale_x_discrete(labels = label_x)
+  return(gg)
+}
+
+```
+
+```{r}
+factor_wrap_1 <- function(gg, sep = " "){
+  x_labels <- layer_scales(gg)$x$get_limits()
+  label_x <- str_replace(x_labels, sep, "\n")
+  return(label_x)
+}
+
+```
+
+```{r remove-parentheses}
+remove_parentheses <- function(x){
+  if(substr(x, 1, 1) == "("){
+    x <- substr(x, 2, nchar(x))
+  }
+  if(substr(x, nchar(x), nchar(x)) == ")"){
+    x <- substr(x, 1, nchar(x)-1)
+  }
+  return(x)
+}
+```
+
+```{r ggcheck_the_qq, warning = FALSE}
+ggcheck_the_qq = function(m1,
+                   line = "robust",
+                   n_boot = 200){
+  n <- nobs(m1)
+  m1_res <- residuals(m1)
+  #sigma_m1_res <- sigma(m1)
+
+  normal_qq <- ppoints(n) %>%
+    qnorm()
+  sample_qq <- m1_res[order(m1_res)]
+  
+  # mean + sd
+  parametric_slope <- sd(sample_qq)
+  parametric_intercept <- mean(sample_qq)
+  
+  # quartiles
+  m1_quartiles <- quantile(m1_res, c(.25, .75))
+  qnorm_quartiles <- qnorm( c(.25, .75))
+  m1_diff <- m1_quartiles[2] - m1_quartiles[1]
+  qnorm_diff <- qnorm_quartiles[2] - qnorm_quartiles[1] # = 1.349
+  quartile_slope <- m1_diff/qnorm_diff
+  quartile_intercept <- median(m1_quartiles) # median of quartiles not quantiles
+  
+  # robust uses MASS:rlm (default arguments?)
+  qq_observed <- data.table(normal_qq = normal_qq,
+                            sample_qq = sample_qq)
+  m2 <- rlm(sample_qq ~ normal_qq, data = qq_observed)
+  robust_intercept <- coef(m2)[1]
+  robust_slope <- coef(m2)[2]
+  
+  # re-sample ribbon
+  set.seed(1)
+  resample_qq_model <- numeric(n_boot*n)
+  Y <- simulate(m1, n_boot)
+  fd <- model.frame(m1) %>%
+    data.table
+  inc <- 1:n
+  for(sim_i in 1:n_boot){
+    # parametric bound
+    fd[, (1) := Y[,sim_i]]
+    m1_class <- class(m1)[1]
+    if(m1_class == "lm"){
+      ff <- lm(formula(m1), data = fd) 
+    }
+    if(m1_class == "lmerModLmerTest" | m1_class == "lmerMod"){
+      ff <- lmer(formula(m1), data = fd)
+    }
+    y_res <- residuals(ff)
+    resample_qq <- y_res[order(y_res)]
+    resample_qq_model[inc] <- resample_qq
+    inc <- inc + n
+    
+    # robust bound
+    qq_resampled <- data.table(normal_qq = normal_qq,
+                              resample_qq = resample_qq)
+    m2_resample <- rlm(resample_qq ~ normal_qq, data = qq_resampled)
+    
+  }
+
+  qq_sim <- data.table(normal_qq = normal_qq,
+                       resample_qq_model = resample_qq_model)
+  
+  qq_ci_model <- qq_sim[, .(median = median(resample_qq_model),
+                      lower = quantile(resample_qq_model, 0.025),
+                      upper = quantile(resample_qq_model, 0.975)),
+                  by = normal_qq]
+  m2_boot <- rlm(median ~ normal_qq, data = qq_ci_model)
+  robust_intercept_boot <- coef(m2_boot)[1]
+  robust_slope_boot <- coef(m2_boot)[2]
+ 
+  ggplot(data = qq_observed,
+         aes(x = normal_qq, y = sample_qq)) +
+    
+    # ribbon
+    geom_ribbon(data = qq_ci_model,
+                aes(ymin = lower,
+                    ymax = upper,
+                    y = median,
+                    fill = "band"),
+                fill = "gray",
+                alpha = 0.6) +
+    # draw points
+    geom_point() +
+    
+   # robust
+    geom_abline(aes(intercept = robust_intercept,
+                    slope = robust_slope,
+                    color = "robust"),
+                show.legend = FALSE,
+                linewidth = 0.75) +
+    # robust_boot
+    # geom_abline(aes(intercept = robust_intercept_boot,
+    #                 slope = robust_slope_boot,
+    #                 color = "robust boot"),
+    #             show.legend = TRUE,
+    #             size = 0.75) +
+    xlab("Normal Quantiles") +
+    ylab("Sample Quantiles") +
+    
+    scale_color_manual(values = pal_okabe_ito[c(1:2,5:6)]) +
+    theme_minimal_grid() +
+    NULL
+  
+}
+```
+
+```{r rqpois}
+  rqpois <- function(n, mu, theta) {
+    y <- rnbinom(n = n, mu = mu, size = mu/(theta-1))
+    return(y)
+  }
+```
+
+
+```{r}
+
+ggcheck_the_glm = function(m1,
+                           n_sim = 250,
+                           se = FALSE,
+                           normal = FALSE){
+  
+  info <- model_info(m1)
+  if(info$family == "quasipoisson"){
+    n <- info$n_obs
+    x_cols <- find_predictors(m1)$conditional
+    y_col <- find_response(m1)
+    m1_data <- get_data(m1) |>
+      data.table()
+    # get mu
+    m1_data[, yhat := exp(predict(m1))]
+    mu_sim <- m1_data[, yhat]
+    # get theta
+    theta <- summary(m1)$dispersion
+    # get fake data
+    y <- rqpois(n * n_sim, rep(mu_sim, n_sim), theta)
+    fd <- matrix(y, nrow = n, ncol = n_sim)
+    m1_check <- createDHARMa(simulatedResponse = fd, 
+                             observedResponse = m1_data[, get(y_col)],
+                             fittedPredictedResponse = m1_data[, yhat],
+                             integerResponse = TRUE)
+  }else{
+    m1_check <- simulateResiduals(fittedModel = m1, n = n_sim)
+  }
+  return(m1_check)
+}
+```
+  
+```{r}
+
+ggcheck_the_glm_qq = function(m1,
+                   n_sim = 250,
+                   se = FALSE,
+                   normal = FALSE){
+  
+  info <- model_info(m1)
+  if(info$family == "quasipoisson"){
+    n <- info$n_obs
+    x_cols <- find_predictors(m1)$conditional
+    y_col <- find_response(m1)
+    m1_data <- get_data(m1) |>
+      data.table()
+    # get counts
+    m1_counts <- m1_data[, .(N = .N), by = x_cols]
+    # get mu
+    m1_data[, yhat := exp(predict(m1))]
+    mu_sim <- m1_data[, yhat]
+    # get theta
+    theta <- summary(m1)$dispersion
+    # get fake data
+    y <- rqpois(n * n_sim, mu_sim * n_sim, theta)
+    fd <- matrix(y, nrow = n, ncol = n_sim)
+    m1_check <- createDHARMa(simulatedResponse = fd, 
+                           observedResponse = m1_data[, get(y_col)],
+                           fittedPredictedResponse = m1_data[, yhat],
+                           integerResponse = TRUE)
+    observed = m1_check$scaledResiduals |>
+      sort()
+  }else{
+    m1_check <- simulateResiduals(fittedModel = m1, n = n_sim)
+    observed = m1_check$scaledResiduals |>
+      sort()
+    
+  }
+
+  m1_data <- get_data(m1)
+  n_points <- nrow(m1_data)
+  
+  q <- n_points + 1
+  x <- seq(1/q, 1 - 1/q, by = 1/q)
+  theoretical <- qunif(x)
+  
+  if(normal == TRUE){
+    observed <- qnorm(observed)
+    theoretical <- qnorm(theoretical)
+  }
+  
+  gg <- ggscatter(data = data.frame(
+    Theoretical = theoretical,
+    Observed = observed),
+    x="Theoretical", 
+    y="Observed",
+    title = "Quantile-Residual Uniform-QQ Plot"
+  ) +
+    
+    geom_abline(slope = 1, intercept = 0) +
+    
+    NULL
+
+  if(se == TRUE){
+    qr <- matrix(as.numeric(NA), nrow = n_points, ncol = n_sim)
+    fake_counts <- m1_check$simulatedResponse
+    m1_form <- find_formula(m1)$conditional
+    m1_y <- find_response(m1)
+    m1_model_name <- model_name(m1)
+    y_col <- which(names(m1_data) == m1_y)
+    for(j in 1:n_sim){
+      m1_data[, 1] <- fake_counts[, j]
+      if(m1_model_name == "glm"){
+        m1_fake <- glm(m1_form, family = "poisson", data = m1_data)
+      }
+      if(m1_model_name == "negbin"){
+        m1_fake <- glm.nb(m1_form, data = m1_data)
+      }
+      simulated_output_fake <- simulateResiduals(m1_fake, n_sim)
+      qr[,j] <- sort(simulated_output_fake$scaledResiduals)
+    }
+    qq_ci_model <- data.table(
+      Theoretical = theoretical,
+      median = apply(qr, 1, median),
+      lower = apply(qr, 1, quantile, 0.025),
+      upper = apply(qr, 1, quantile, 0.975)
+    )
+    gg <- gg +
+      # ribbon
+      geom_ribbon(data = qq_ci_model,
+                  aes(ymin = lower,
+                      ymax = upper,
+                      y = median,
+                      fill = "band"),
+                  fill = "gray",
+                  alpha = 0.6)
+  }
+  
+  gg
+  return(gg)
+}
+
+```
+
+
+```{r ggcheck_the_spreadlevel}
+ggcheck_the_spreadlevel <- function(m1,
+                   n_boot = 200){
+  n <- nobs(m1)
+  m1_res <- residuals(m1)
+  m1_scaled <- m1_res/sd(m1_res)
+  m1_root <- sqrt(abs(m1_scaled))
+  m1_fitted <- fitted(m1)
+  
+  m2 <- lm(m1_root ~ m1_fitted)
+  m2_intercept <- coef(m2)[1]
+  m2_slope <- coef(m2)[2]
+
+  plot_data <- data.table(
+    m1_res = sqrt(abs(m1_scaled)),
+    fitted = m1_fitted
+  )
+  
+    ggplot(data = plot_data,
+         aes(x = fitted, y = m1_res)) +
+    
+    # ribbon
+    # geom_ribbon(data = qq_ci_model,
+    #             aes(ymin = lower,
+    #                 ymax = upper,
+    #                 y = median,
+    #                 fill = "band"),
+    #             fill = "gray",
+    #             alpha = 0.6) +
+    # # draw points
+      geom_point() +
+    
+      geom_smooth(method = lm) +
+   # robust 
+    # geom_abline(aes(intercept = robust_intercept,
+    #                 slope = robust_slope,
+    #                 color = "robust"),
+    #             show.legend = TRUE,
+    #             size = 0.75) +
+    # robust_boot
+    # geom_abline(aes(intercept = robust_intercept_boot,
+    #                 slope = robust_slope_boot,
+    #                 color = "robust boot"),
+    #             show.legend = TRUE,
+    #             size = 0.75) +
+    xlab("Fitted") +
+    ylab("root abs-scaled-residual") +
+    
+    
+    scale_color_manual(values = pal_okabe_ito[c(1:2,5:6)]) +
+    theme_minimal_grid() +
+    NULL
+}
+```
+
+```{r ggcheck_the_model}
+ggcheck_the_model <- function(m1){
+  gg1 <- ggcheck_the_qq(m1)
+  gg2 <- ggcheck_the_spreadlevel(m1)
+  cowplot::plot_grid(gg1, gg2, nrow = 1)
+}
+```
+
+
+```{r emm_table}
+emm_table <- function(fit_emm){
+  if(is.data.frame(fit_emm)){
+    table_out <- data.table(fit_emm)
+  }else{
+    table_out <- data.table(summary(fit_emm))
+  }
+  if("response" %in% colnames(table_out)){
+    # if the lm with log(y) or glm with log link, use " / "
+    setnames(table_out,
+             old = c("response"),
+             new = c("emmean"))
+  }
+  if("asymp.LCL" %in% colnames(table_out)){
+    # if the lm with log(y) or glm with log link, use " / "
+    setnames(table_out,
+             old = c("asymp.LCL", "asymp.UCL"),
+             new = c("lower.CL", "upper.CL"))
+  }
+  return(table_out)
+}
+```
+
+```{r effects_table}
+effects_table <- function(fit_pairs,
+                          digits = 2,
+                          accuracy = 1e-04,
+                          add.p = FALSE){
+  if(is.data.frame(fit_pairs) == TRUE){
+    pairs_dt <- data.table(fit_pairs)
+  }else{
+    pairs_dt <- summary(fit_pairs) %>%
+      data.table()
+  }
+ 
+  if("asymp.LCL" %in% colnames(pairs_dt)){
+    # if the lm with log(y) or glm with log link, use " / "
+    setnames(pairs_dt,
+             old = c("asymp.LCL", "asymp.UCL"),
+             new = c("lower.CL", "upper.CL"))
+  }
+  
+  # for simple = each,
+  if(which(colnames(pairs_dt)=="contrast") == 3){
+    # replace "." with blank
+    g_col <- colnames(fit_pairs)[1]
+    x_col <- colnames(fit_pairs)[2]
+    pairs_dt[get(g_col) == ".", 
+             (1) := ""]
+    pairs_dt[get(x_col) == ".", 
+             (2) := ""]
+
+    # beautify contrast column and group1, group2
+    pairs_dt[, contrast := paste0(get(names(pairs_dt)[1]),
+                                   get(names(pairs_dt)[2]),
+                                   ": ",
+                                   contrast)]
+  }
+  
+  # create a column of nicely formatted p-values for display.
+  # pairs_dt[, p := pvalString(p.value)]
+  pairs_dt[, p := p_format(p.value,
+                           digits = digits,
+                           accuracy = accuracy,
+                           add.p = add.p)]
+  pairs_dt[, contrast := factor(contrast, contrast)]
+  return(pairs_dt)
+}
+
+
+```
+
+```{r pvalue_table}
+pvalue_table <- function(fit_pairs,
+                         replace_space = FALSE # if two factors, this should be a "," between the two groups in treatment combo
+                         ){
+  if(is.data.frame(fit_pairs) == TRUE){
+    pairs_dt <- data.table(fit_pairs)
+  }else{
+    pairs_dt <- summary(fit_pairs) %>%
+      data.table()
+  }
+  
+  # change odds.ratio to ratio for binomial models
+  if("odds.ratio" %in% colnames(pairs_dt)){
+    setnames(pairs_dt, "odds.ratio", "ratio")
+  }
+  
+  if("ratio" %in% colnames(pairs_dt)){
+    # if the lm with log(y) or glm with log link, use " / "
+    groups <- unlist(str_split(pairs_dt$contrast, " / "))
+    setnames(pairs_dt, old = "ratio", new = "estimate")
+  }else{
+    # if lm use " - "
+    groups <- unlist(str_split(pairs_dt$contrast, " - "))
+  }
+  
+  # replace spaces with comma
+  if(replace_space == TRUE){
+    groups <- str_replace_all(groups, " ", ",")
+  }
+    
+
+  # remove parentheses if they exist from group cols
+  groups <- lapply(groups, remove_parentheses) %>%
+    unlist
+  
+  # add the group1 and group 2 columns
+  pairs_dt[, group1 := groups[odd(1:length(groups))]]
+  pairs_dt[, group2 := groups[even(1:length(groups))]]
+  
+  # match for simple and remove parentheses if they exist
+  if(names(pairs_dt)[1] != "contrast"){
+    x_col <- names(pairs_dt)[2]
+    g_col <- names(pairs_dt)[1]
+    x_col_levels <- unique(pairs_dt[, get(x_col)])
+    x_col_levels <- x_col_levels[x_col_levels != "."]
+    g_col_levels <- unique(pairs_dt[, get(g_col)])
+    g_col_levels <- g_col_levels[g_col_levels != "."]
+    repair <- pairs_dt[, group1] %in% c(x_col_levels, g_col_levels)
+    pairs_dt[, group1 := ifelse(repair,
+                                group1,
+                                gsub(")", "", group1, fixed = TRUE))]
+    pairs_dt[, group1 := ifelse(repair,
+                                group1,
+                                gsub("(", "", group1, fixed = TRUE))]
+    repair <- pairs_dt[, group2] %in% c(x_col_levels, g_col_levels)
+    pairs_dt[, group2 := ifelse(repair,
+                                group2,
+                                gsub(")", "", group2, fixed = TRUE))]
+    pairs_dt[, group2 := ifelse(repair,
+                                group2,
+                                gsub("(", "", group2, fixed = TRUE))]
+  }
+  
+  
+  if("asymp.LCL" %in% colnames(pairs_dt)){
+    # if the lm with log(y) or glm with log link, use " / "
+    setnames(pairs_dt,
+             old = c("asymp.LCL", "asymp.UCL"),
+             new = c("lower.CL", "upper.CL"))
+  }
+  
+  # for simple = each,
+  if(which(colnames(pairs_dt)=="contrast") == 3){
+    # replace "." with blank
+    pairs_dt[get(g_col) == ".", 
+             (1) := ""]
+    pairs_dt[get(x_col) == ".", 
+             (2) := ""]
+
+    # beautify contrast column and group1, group2
+    pairs_dt[, contrast := paste0(get(names(pairs_dt)[1]),
+                                   get(names(pairs_dt)[2]),
+                                   ": ",
+                                   contrast)]
+    pairs_dt[get(g_col) == "",
+             group1 := paste0(get(names(pairs_dt)[1]),
+                              get(names(pairs_dt)[2]),
+                              ",",
+                              group1)]
+    pairs_dt[get(g_col) == "",
+             group2 := paste0(get(names(pairs_dt)[1]),
+                              get(names(pairs_dt)[2]),
+                              ",",
+                              group2)]
+    pairs_dt[get(x_col) == "",
+             group1 := paste0(group1,
+                              ",",
+                              get(names(pairs_dt)[1]),
+                              get(names(pairs_dt)[2]))]
+    pairs_dt[get(x_col) == "",
+             group2 := paste0(group2,
+                              ",",
+                              get(names(pairs_dt)[1]),
+                              get(names(pairs_dt)[2]))]
+  }
+  
+  # create a column of nicely formatted p-values for display.
+  pairs_dt[, p := pvalString(p.value)]
+  pairs_dt[, contrast := factor(contrast, contrast)]
+  return(pairs_dt)
+}
+
+
+```
+
+
+```{r response-plot}
+response_plot <- function(
+  fit, # model fit from lm, lmer, nlme, glmmTMB
+  fit_emm, # data frame with means, error
+  data = NULL, # only necessary for aov_4 fits
+  x_label = "none",
+  y_label = "Response (units)",
+  g_label = NULL,
+  dots = "sina",
+  dodge_width = 0.8,
+  jitter_width = 0.4,
+  adjust = 0.5,
+  palette = pal_okabe_ito,
+  legend_position = "top",
+  flip_horizontal = FALSE,
+  group_lines = FALSE,
+  block_label = NULL,
+  join_blocks = FALSE
+  
+){
+
+  # if(is.null(data)){
+  #   if(substr(fit$call[1], 1, 3) == "gls"){
+  #     data <- getData(fit) %>% # correctly subsets
+  #       data.table()
+  #     
+  #   }else{
+  #     data <- model.frame(fit) %>% # correctly subsets
+  #       data.table()
+  #   }
+  # }else{
+  #   data <- data.table(data)
+  # }
+  data <- get_data(fit) |>
+    data.table()
+  y_col <- find_response(fit)
+  
+  fit_emm_dt <- emm_table(fit_emm)
+  
+  # get number of pre emmean/ratio/rate columns
+  if("emmean" %in% names(fit_emm_dt)){response <- "emmean"}
+  if("rate" %in% names(fit_emm_dt)){response <- "rate"}
+  if("ratio" %in% names(fit_emm_dt)){response <- "ratio"}
+  if("prob" %in% names(fit_emm_dt)){response <- "prob"}
+  
+  if(which(names(fit_emm_dt) == response) == 2){
+    x_col <- names(fit_emm_dt)[1]
+    g_col <- NA
+  }else{
+    x_col <- names(fit_emm_dt)[1]
+    g_col <- names(fit_emm_dt)[2]
+  }
+    
+  rand_int <- find_random(fit)
+  
+  if(is.na(g_col) & group_lines==TRUE){
+    group_lines <- FALSE
+  }
+  if(is.factor(data[, get(x_col)]) == FALSE){
+    data[, (x_col) := factor(get(x_col))]
+  }
+  if(!is.na(g_col)){
+    if(is.factor(data[, get(g_col)]) == FALSE){
+      data[, (g_col) := factor(get(g_col))]
+    }
+  } 
+  
+  if(is.na(g_col)){
+    pd <- position_dodge(width = 0)
+  }else{
+    pd <- position_dodge(width = dodge_width)
+  }
+  
+  if(is.na(g_col)){
+    color_col <- x_col
+  }else{
+    color_col <- g_col
+  }
+  
+  gg <- ggplot(data=data, aes(x = get(x_col),
+                            y = get(y_col),
+                            color = get(color_col)))
+  # plot points
+  if(join_blocks == TRUE){
+    gg <- gg + geom_line(aes(x = get(x_col),
+                             y = get(y_col),
+                             group = block_label))
+  }
+  if(dots == "sina"){
+    gg <- gg + geom_sina(alpha = 0.5,
+                         position = pd,
+                         adjust = adjust,
+                         scale = "width",
+                         maxwidth = jitter_width)
+  }
+  if(dots == "jitter"){
+    gg <- gg + geom_point(alpha = 0.5,
+                          position = position_jitterdodge(seed = 1,
+                                                          jitter.width = jitter_width,
+                                                          dodge.width = dodge_width))
+  }
+  if(dots == "dotplot"){
+    gg <- gg + geom_dotplot(binaxis='y',
+                            stackdir='center',
+                            alpha = 0.5,
+                            position = pd)
+  }
+  
+  # plot means and CI
+  gg <- gg +
+    geom_errorbar(data = fit_emm_dt, aes(y = get(response),
+                                         ymin = lower.CL,
+                                         ymax = upper.CL,
+                                         color = get(color_col)),
+                  width = 0,
+                  position = pd
+    ) +
+    geom_point(data = fit_emm_dt, aes(y = get(response),
+                                      color = get(color_col)),
+               size = 3,
+               position = pd
+    ) +
+    
+    # aesthetics
+    ylab(y_label) +
+    scale_color_manual(values = palette,
+                       name = color_col) +
+    theme_pubr() +
+    theme(legend.position = legend_position) +
+    
+    NULL
+  
+  # if(group_lines == TRUE | group_lines == g_col){
+  #   gg <- gg +
+  #     geom_line(data = fit_emm_dt,
+  #               aes(y = emmean,
+  #                   group = get(g_col)),
+  #               position = pd)
+  # }
+  # if(group_lines == x_col){
+  #   gg <- gg +
+  #     geom_line(data = fit_emm_dt,
+  #               aes(y = emmean,
+  #                   group = get(x_col)))
+  # }
+  
+  if(is.na(g_col)){
+    gg <- gg + theme(legend.position="none")
+  }
+  
+  if(is.null(g_label)){
+    gg <- gg + guides(color = guide_legend(title=g_col))
+  }else{
+    if(g_label == "none"){
+      gg <- gg + guides(color = guide_legend(title=NULL))
+    }else{
+      gg <- gg + guides(color = guide_legend(title=g_label))
+    }
+  }
+  
+  # remove x axis title
+  if(x_label == "none"){
+    gg <- gg + theme(axis.title.x = element_blank())
+  }else{
+    gg <- gg + xlab(x_label)}
+  
+  if(flip_horizontal == TRUE){
+    gg <- gg + coord_flip() +
+      theme(legend.position = legend_position)
+    gg <- gg + theme(axis.title.x = element_text())
+    if(x_label == "none"){
+      gg <- gg + theme(axis.title.y = element_blank())
+    }else{
+      gg <- gg + ylab(x_label)
+    }
+  }
+  
+  # gg
+  
+  return(gg) 
+}
+```
+
+```{r plot_pvalues}
+plot_pvalues <- function(
+      gg,
+      fit_emm,
+      fit_pairs,
+      contrast_rows,
+      y_pos = NULL,
+      pvalue_text_size = 3.5
+){
+  fit_emm_dt <- emm_table(fit_emm)
+  
+  # change prob to emmean in binomial models
+  if("prob" %in% names(fit_emm_dt)){
+    setnames(fit_emm_dt, "prob", "emmean")
+  }
+
+  # change rate to emmean in quasipoisson models
+  if("rate" %in% names(fit_emm_dt)){
+    setnames(fit_emm_dt, "rate", "emmean")
+  }
+
+  if(which(names(fit_emm_dt) == "emmean") == 2){
+    x_col <- names(fit_emm_dt)[1]
+    g_col <- NA
+    pvalue_table_dt <- pvalue_table(fit_pairs, replace_space = FALSE)
+  }else{
+    x_col <- names(fit_emm_dt)[1]
+    g_col <- names(fit_emm_dt)[2]
+    pvalue_table_dt <- pvalue_table(fit_pairs, replace_space = TRUE)
+  }
+  
+  if(is.na(g_col)){
+#    pd <- position_dodge(width = 0)
+    pvalue_table_dt[, x_min_col := group1]
+    pvalue_table_dt[, x_max_col := group2]
+  }else{
+#    pd <- position_dodge(width = dodge_width)
+    pvalue_table_dt[, x_min_col := NA]
+    pvalue_table_dt[, x_max_col := NA]
+  }
+  
+  if(is.na(g_col)){
+    color_col <- x_col
+  }else{
+    color_col <- g_col
+  }
+  
+  if(contrast_rows[1] == "all"){
+    contrast_rows <- 1:nrow(pvalue_table_dt)
+  }
+  
+  if(sum(contrast_rows) > 0){ # show p-values
+    # get x positions for p-values
+    # [[3]] is 3rd layer which is means
+    if(is.na(pvalue_table_dt[1, x_min_col])){
+      gg_data <- cbind(fit_emm_dt,
+                       ggplot_build(gg)$data[[3]])
+      
+      gg_data[, cell := paste(get(x_col), get(g_col), sep=" ")]
+      gg_data[, cell := paste(get(x_col), get(g_col), sep=",")]
+      match_it_ref <- match(pvalue_table_dt$group1, gg_data$cell)
+      
+      pvalue_table_dt[, rowa := match(group1, gg_data$cell)]
+      pvalue_table_dt[, rowb := match(group2, gg_data$cell)]
+      pvalue_table_dt[, x_min_col := gg_data[rowa, x]]
+      pvalue_table_dt[, x_max_col := gg_data[rowb, x]]
+    }
+    
+#    if(is.null(p_pos)){
+      p_pos <- 1:length(contrast_rows)
+ #   }
+    
+    # get min/max y
+    y_range <- ggplot_build(gg)$layout$panel_params[[1]]$y.range
+    max_y <- y_range[2]
+    min_y <- y_range[1]
+
+    increment <- 0.08*(max_y - min_y)
+    if(is.null(y_pos)){
+      y_position <- max_y + increment*p_pos
+    }else{
+      y_position <- y_pos
+    }
+    
+    
+    gg <- gg + 
+      stat_pvalue_manual(pvalue_table_dt[contrast_rows],
+                         label = "p",
+                         y.position = y_position,
+                         xmin = "x_min_col",
+                         xmax = "x_max_col",
+                         size = pvalue_text_size,
+                         tip.length = 0.01)
+    
+    # make sure ylim includes p-value
+    y_hi <- max(y_position)
+    y_lo <- min_y - 0.05*(max_y - min_y)
+    gg <- gg + coord_cartesian(ylim = c(y_lo, y_hi))
+  }
+  
+  
+  
+  # gg
+  
+  return(gg)
+}
+```
+
+```{r ggplot_the_response}
+ggplot_the_response <- function(
+    fit, # model fit from lm, lmer, nlme, glmmTMB
+    fit_emm,
+    fit_pairs,
+    data, # only necessary for aov_4 fits
+    wrap_col = NULL,
+    x_label = "none",
+    y_label = "Response (units)",
+    g_label = NULL,
+    dots = "sina",
+    dodge_width = 0.8,
+    jitter_width = 0.4,
+    adjust = 0.5,
+    contrast_rows = "all",
+    y_pos = NULL,
+    pvalue_text_size = 3.5,
+    palette = pal_okabe_ito,
+    legend_position = "top",
+    flip_horizontal = FALSE,
+    group_lines = FALSE,
+    block_label = NULL,
+    join_blocks = FALSE
+){
+  
+  # base plot
+  gg <- response_plot(
+    fit = fit,
+    fit_emm = fit_emm,
+    data = NULL, # only necessary for aov_4 fits
+    x_label = x_label,
+    y_label = y_label,
+    g_label = g_label,
+    dots = dots,
+    dodge_width = dodge_width,
+    jitter_width = jitter_width,
+    adjust = adjust,
+    palette = palette,
+    legend_position = legend_position,
+    flip_horizontal = flip_horizontal,
+    group_lines = group_lines,
+    block_label = block_label,
+    join_blocks = join_blocks
+  )
+  
+  # add p-values
+  if(contrast_rows[1] != "none" |
+     contrast_rows[1] == 0 ){
+    gg <- plot_pvalues(
+      gg = gg,
+      fit_emm = fit_emm,
+      fit_pairs = fit_pairs,
+      contrast_rows = contrast_rows,
+      y_pos = y_pos,
+      pvalue_text_size = pvalue_text_size
+    )
+  }
+  
+  gg
+  return(gg)
+}
+```
+
+```{r old_ggplot_the_response}
+old_ggplot_the_response <- function(
+  fit, # model fit from lm, lmer, nlme, glmmTMB
+  fit_emm,
+  fit_pairs,
+  wrap_col=NULL,
+  x_label = "none",
+  y_label = "Response (units)",
+  g_label = NULL,
+  dots = "sina",
+  dodge_width = 0.8,
+  adjust = 0.5,
+  contrast_rows = "all",
+  p_pos = NULL,
+  palette = pal_okabe_ito,
+  legend_position = "top",
+  flip_horizontal = FALSE,
+  group_lines = FALSE){
+  
+  show_contrasts <- contrast_rows
+  
+  dt <- model.frame(fit) %>% # correctly subsets
+    data.table()
+  y_col <- insight::find_response(fit)
+  
+  fit_emm_dt <- emm_table(fit_emm)
+  fit_pairs_dt <- effects_table(fit_pairs)
+  
+  if(which(names(fit_emm_dt) == "emmean") == 2){
+    x_col <- names(fit_emm_dt)[1]
+    g_col <- NA
+  }else{
+    x_col <- names(fit_emm_dt)[1]
+    g_col <- names(fit_emm_dt)[2]
+  }
+    
+  # if(is.null(x_col)){
+  #   x_col <- find_predictors(fit)$conditional[1]
+  # }
+  # if(is.null(g_col)){
+  #   g_col <- find_predictors(fit)$conditional[2]
+  # }
+  rand_int <- find_random(fit)
+  
+  if(is.na(g_col) & group_lines==TRUE){
+    group_lines <- FALSE
+  }
+  if(is.factor(dt[, get(x_col)]) == FALSE){
+    dt[, (x_col) := factor(get(x_col))]
+  }
+  if(!is.na(g_col)){
+    if(is.factor(dt[, get(g_col)]) == FALSE){
+      dt[, (g_col) := factor(get(g_col))]
+    }
+  } 
+  
+  if(is.na(g_col)){
+    pd <- position_dodge(width = 0)
+    fit_pairs_dt[, x_min_col := group1]
+    fit_pairs_dt[, x_max_col := group2]
+  }else{
+    pd <- position_dodge(width = dodge_width)
+    fit_pairs_dt[, x_min_col := NA]
+    fit_pairs_dt[, x_max_col := NA]
+  }
+  
+  if(is.na(g_col)){
+    color_col <- x_col
+  }else{
+    color_col <- g_col
+  }
+  
+  gg <- ggplot(data=dt, aes(x = get(x_col),
+                            y = get(y_col),
+                            color = get(color_col)))
+  # plot points
+  if(dots == "sina"){
+    gg <- gg + geom_sina(alpha = 0.5,
+                         position = pd,
+                         adjust = adjust)
+  }
+  if(dots == "jitter"){
+    gg <- gg + geom_point(alpha = 0.5,
+                          position = "jitter")
+  }
+  if(dots == "dotplot"){
+    gg <- gg + geom_dotplot(binaxis='y',
+                            stackdir='center',
+                            alpha = 0.5,
+                            position = pd)
+    
+  }
+  
+  # plot means and CI
+  gg <- gg +
+    geom_errorbar(data = fit_emm_dt, aes(y = emmean,
+                                         ymin = lower.CL,
+                                         ymax = upper.CL,
+                                         color = get(color_col)),
+                  width = 0,
+                  position = pd
+    ) +
+    geom_point(data = fit_emm_dt, aes(y = emmean,
+                                      color = get(color_col)),
+               size = 3,
+               position = pd
+    ) +
+    
+    # aesthetics
+    ylab(y_label) +
+    scale_color_manual(values = palette,
+                       name = color_col) +
+    theme_pubr() +
+    theme(legend.position = legend_position) +
+    
+    NULL
+  
+  # if(group_lines == TRUE | group_lines == g_col){
+  #   gg <- gg +
+  #     geom_line(data = fit_emm_dt,
+  #               aes(y = emmean,
+  #                   group = get(g_col)),
+  #               position = pd)
+  # }
+  # if(group_lines == x_col){
+  #   gg <- gg +
+  #     geom_line(data = fit_emm_dt,
+  #               aes(y = emmean,
+  #                   group = get(x_col)))
+  # }
+  
+  if(is.na(g_col)){
+    gg <- gg + theme(legend.position="none")
+  }
+  
+  if(is.null(g_label)){
+    gg <- gg + guides(color = guide_legend(title=g_col))
+  }else{
+    if(g_label == "none"){
+      gg <- gg + guides(color = guide_legend(title=NULL))
+    }else{
+      gg <- gg + guides(color = guide_legend(title=g_label))
+    }
+  }
+  
+  if(is.numeric(show_contrasts)){
+    contrast_rows <- show_contrasts
+  }else{
+    if(show_contrasts == "none"){
+      contrast_rows <- 0
+    }
+    if(show_contrasts == "all"){
+      contrast_rows <- 1:nrow(fit_pairs_dt)
+    }
+  }
+  if(sum(contrast_rows) > 0){ # show p-values
+    # get x positions for p-values
+    # [[3]] is 3rd layer which is means
+    if(is.na(fit_pairs_dt[1, x_min_col])){
+      gg_data <- cbind(fit_emm_dt,
+                       ggplot_build(gg)$data[[3]])
+      
+      gg_data[, cell := paste(get(x_col), get(g_col), sep=",")]
+      match_it_ref <- match(fit_pairs_dt$group1, gg_data$cell)
+      
+      fit_pairs_dt[, rowa := match(group1, gg_data$cell)]
+      fit_pairs_dt[, rowb := match(group2, gg_data$cell)]
+      fit_pairs_dt[, x_min_col := gg_data[rowa, x]]
+      fit_pairs_dt[, x_max_col := gg_data[rowb, x]]
+    }
+    
+    if(is.null(p_pos)){
+      p_pos <- 1:length(contrast_rows)
+    }
+    max_y <- max(dt[, get(y_col)], na.rm=TRUE)
+    min_y <- min(dt[, get(y_col)], na.rm=TRUE)
+    # make sure max includes CIs!
+    max_y <- max(max_y, fit_emm_dt$upper.CL)
+    min_y <- min(min_y, fit_emm_dt$lower.CL)
+    
+    increment <- 0.08*(max_y - min_y)
+    y_position <- max_y + increment*p_pos
+    gg <- gg + 
+      stat_pvalue_manual(fit_pairs_dt[contrast_rows],
+                         label = "p",
+                         y.position = y_position,
+                         xmin = "x_min_col",
+                         xmax = "x_max_col",
+                         size = 2.5,
+                         tip.length = 0.01)
+    
+    # make sure ylim includes p-value
+    y_hi <- max_y + 0.05*(max_y - min_y) +
+      increment*max(p_pos)
+    y_lo <- min_y - 0.05*(max_y - min_y)
+    gg <- gg + coord_cartesian(ylim = c(y_lo, y_hi))
+  }
+  
+  
+  # remove x axis title
+  if(x_label == "none"){
+    gg <- gg + theme(axis.title.x = element_blank())
+  }else{
+    gg <- gg + xlab(x_label)}
+  
+  if(flip_horizontal == TRUE){
+    gg <- gg + coord_flip() +
+      theme(legend.position = legend_position)
+    gg <- gg + theme(axis.title.x = element_text())
+    if(x_label == "none"){
+      gg <- gg + theme(axis.title.y = element_blank())
+    }else{
+      gg <- gg + ylab(x_label)
+    }
+  }
+  
+  # gg
+  
+  return(gg)
+}
+
+
+```
+
+```{r ggplot_the_effects}
+ggplot_the_effects <- function(fit,
+                       fit_pairs,
+                       contrast_rows = "all",
+                       show_p = TRUE,
+                       p_position = "top", # "top", "right", "align"
+                       nudge_y = 0.33,
+                       effect_label = "Effect (units)",
+                       effect_x_lim = "auto"){
+
+  if(!is.data.frame(fit_pairs)){
+    stop("contrast object (fit_pairs) not converted to a data frame. Convert using fit_pairs <- summary(infer = TRUE)")
+  }
+
+  if(contrast_rows[1] == "all"){
+    contrast_rows <- 1:nrow(fit_pairs)
+  }
+  
+  fit_pairs_dt <- effects_table(fit_pairs[contrast_rows,])
+  fit_pairs_dt[, contrast := fct_rev(contrast)]
+  
+  if("lower.CL" %not_in% colnames(fit_pairs_dt)){
+    stop("contrast object (fit_pairs) does not include confidence interval columns. Recompute using fit_pairs <- summary(infer = TRUE)")
+  }
+  
+  if("ratio" %in% names(fit_pairs)){
+    nill_null <- 1.0
+    setnames(fit_pairs_dt, old = "ratio", new = "estimate")
+    effect_type <- "ratio"
+  }else{
+    nill_null <- 0.0
+  }
+  
+  neg_space <- 0.4
+  p <- nrow(fit_pairs_dt)
+  min_bound <- min(fit_pairs_dt[, lower.CL])
+  max_bound <- max(fit_pairs_dt[, upper.CL])
+  x_lo <- min_bound - 0.1*abs(min_bound)
+  x_hi <- max_bound + 0.1*abs(max_bound)
+  if(x_lo > -neg_space*x_hi){
+    x_lo <- -neg_space*x_hi
+  }
+  if(x_hi < -neg_space*x_lo){
+    x_hi <- -neg_space*x_lo
+  }
+  
+  if(effect_x_lim[1] == "auto"){
+    x_lims <- c(x_lo, x_hi)
+  }else
+  {
+    x_lims <- effect_x_lim
+  }
+  
+  gg <- ggplot(data = fit_pairs_dt,
+               aes(y = contrast,
+                   x = estimate)) +
+    geom_errorbar(aes(xmin=lower.CL, 
+                      xmax=upper.CL),
+                  width=0, 
+                  color="black") +
+    geom_point(size = 3) +
+    
+    geom_vline(xintercept = nill_null, linetype = 2) +
+    theme_pubr() +
+    xlab(effect_label) +
+    theme(axis.title.y = element_blank()) +
+    scale_x_continuous(position="top") +
+    NULL
+  
+    gg <- gg + coord_cartesian(xlim = x_lims)
+  
+  
+  nudge_x <- 0
+  hjust_i <- 0.5
+  if(show_p == TRUE){
+    if(p_position == "top"){
+      xpos <- fit_pairs_dt[, estimate]
+      hjust_i <- 0.5
+   }
+     if(p_position == "right"){
+       xpos <- fit_pairs_dt[, upper.CL] + (x_hi - x_lo)/100
+       nudge_y <- 0.0
+       hjust_i <- 0
+    }
+   gg <- gg +
+      # p-values
+      annotate(geom = "text",
+               label = fit_pairs_dt[, p],
+               x = xpos + nudge_x,
+               y = p:1 + nudge_y,
+               size = 2.5,
+               hjust = hjust_i)    
+  }
+
+  # gg
+  
+  return(gg)
+}
+```
+
+```{r ggplot_the_model}
+ggplot_the_model <- function(fit,
+                           fit_emm,
+                           fit_pairs,
+                           data = NULL, # only necessary for aov_4 fits
+                           x_label = "none",
+                           y_label = "Response (units)",
+                           g_label = NULL,
+                           effect_label = "Effect (units)",
+                           dots = "sina",
+                           dodge_width = 0.8,
+                           jitter_width = 0.4,
+                           adjust = 0.5,
+                           contrast_rows = "all",
+                           show_p = TRUE,
+                           p_position = "top",
+                           nudge_y = 0.33,
+                           y_pos = NULL,
+                           palette = pal_okabe_ito,
+                           legend_position = "bottom",
+                           flip_horizontal = FALSE,
+                           rel_heights = c(1,1),
+                           group_lines = FALSE,
+                           effect_x_lim = "auto"){
+  
+  gg1 <- response_plot(
+    fit = fit,
+    fit_emm = fit_emm,
+    x_label = x_label,
+    y_label = y_label,
+    g_label = g_label,
+    dots = dots,
+    dodge_width = dodge_width,
+    adjust = adjust,
+    palette = palette,
+    legend_position = legend_position,
+    flip_horizontal = flip_horizontal,
+    group_lines = group_lines
+  )
+
+  gg2 <- ggplot_the_effects(fit = fit,
+                          fit_pairs = fit_pairs,
+                          contrast_rows = contrast_rows,
+                          show_p = show_p,
+                          p_position = p_position,
+                          nudge_y = nudge_y,
+                          effect_label = effect_label,
+                          effect_x_lim = effect_x_lim)
+  plot_grid(gg2,
+            gg1,
+            nrow=2,
+            align = "v",
+            axis = "lr",
+            rel_heights = rel_heights)
+}
+```
+
+```{r plot_treatments}
+plot_treatments <- function(gg,
+                            x_levels,
+                            text_size = 5){
+  
+  x_pos <- ggplot_build(gg)$data[[2]][, "x"]
+  # x_lim <- c(min(ggplot_build(gg)$data[[1]][, "xmin"]),
+  #            max(ggplot_build(gg)$data[[1]][, "xmax"]))
+  x_range <- ggplot_build(gg)$layout$panel_params[[1]]$x.range
+  x_lim <- x_range
+  
+  y_pos <- 0
+  p <- nrow(x_levels)
+  y_sep <- 1
+  y_breaks <- y_pos + y_sep*(p-1):0
+  y_lim <- c(y_pos, y_pos + y_sep*(p-1)) +
+    + c(-y_sep/2, y_sep/2)
+
+  gg_levels <- ggplot(data = data.table(x_pos, y_pos),
+               aes(x = x_pos,
+                   y = y_pos))
+  
+  for(i in 1:nrow(x_levels)){
+    gg_levels <- gg_levels +
+      annotate(geom = "text",
+               label = x_levels[i,],
+               x = x_pos,
+               y = y_breaks[i],
+               size = text_size)
+  }
+  gg_levels <- gg_levels +
+    coord_cartesian(ylim = y_lim,
+                    xlim = x_lim) +
+    theme(axis.title = element_blank(),
+          axis.text.x = element_blank(),
+          axis.ticks = element_blank(),
+          panel.grid = element_blank(),
+          axis.line = element_blank(),
+          panel.background = element_blank(),
+          plot.margin = unit(c(0, 0, 0, 0), "pt")) +
+    scale_y_continuous(breaks = y_breaks,
+                       labels = row.names(x_levels)) +
+    scale_x_discrete(expand = expansion(mult = c(0, 0))) +
+    NULL 
+  
+  return(gg_levels)
+}
+
+
+```
+
+```{r ggplot_the_treatments}
+ggplot_the_treatments <- function(
+  gg,
+  x_levels,
+  text_size = 5,
+  show_groups = FALSE,
+  rel_heights = c(1, 0.1)
+){
+  gg_levels <- plot_treatments(gg,
+                               x_levels,
+                               text_size)
+  
+  if(show_groups == FALSE){
+    gg <- gg +
+      theme(axis.text.x= element_blank())
+  }
+  
+  gg_out <- plot_grid(
+    gg,
+    gg_levels,
+    nrow = 2,
+    rel_heights = rel_heights,
+    align = "v",
+    axis = "lr"
+  )
+  return(gg_out)
+}
+```
+
+
+```{r vertical-brackets-functions, echo=FALSE}
+bracketsGrob <- function(...){
+l <- list(...)
+e <- new.env()
+e$l <- l
+  grid:::recordGrob(  {
+    do.call(grid.brackets, l)
+  }, e)
+}
+
+
+geom_bracket <- function(x,
+                         y,
+                         yend,
+                         tip.length = 0.01,
+                         line.size = 0.4,
+                         label = "",
+                         text.size = 4,
+                         text.nudge_x = 0.02,
+                         text.hjust = 0.5,
+                         text.vjust = 0.5,
+                         text.angle = 0,
+                         parse = FALSE,
+                         ...){
+  # x_range <- layer_scales(gg)$x$get_limits()
+  # if(!is.numeric(x_range)){
+  #   x_range <- ggplot_build(gg)$layout$panel_scales_x[[1]]$range_c$range
+  # }
+  # x_scale <- diff(x_range)
+  x_scale <- 1
+  
+  list(geom_segment(x = x,
+                    y = y,
+                    xend = x,
+                    yend = yend,
+                    size = line.size,
+                    ...),
+       geom_segment(x = x,
+                    y = y,
+                    xend = x - tip.length*x_scale,
+                    yend = y,
+                    size = line.size,
+                    ...),
+       geom_segment(x = x,
+                    y = yend,
+                    xend = x - tip.length*x_scale,
+                    yend = yend,
+                    linewidth = line.size,
+                    ...),
+       annotate(geom = "text",
+                x = x + text.nudge_x*x_scale,
+                y = y  + text.vjust*(yend - y),
+                label = label,
+                size = text.size,
+                hjust = text.hjust,
+                angle = text.angle,
+                parse = parse,
+                ...)
+  )
+}
+geom_vbracket <- function(gg,
+                          x,
+                          y,
+                          tip.length = 0.02,
+                          width = 1,
+                          color = "black"){
+  x_range <- layer_scales(gg)$x$get_limits()
+  if(!is.numeric(x_range)){
+    x_range <- ggplot_build(gg)$layout$panel_scales_x[[1]]$range_c$range
+  }
+  x_scale <- diff(x_range)
+  gg <- gg +
+    geom_segment(x = x,
+               y = y[1],
+               xend = x,
+               yend = y[2],
+               size = 0.1*width,
+               color = color) +
+    geom_segment(x = x,
+               y = y[1],
+               xend = x - tip.length*x_scale,
+               yend = y[1],
+               size = 0.1*width,
+               color = color) +
+    geom_segment(x = x,
+               y = y[2],
+               xend = x - tip.length*x_scale,
+               yend = y[2],
+               size = 0.1*width,
+               color = color)
+  return(gg)
+}
+
+geom_pbracket <- function(gg,
+                          x,
+                          y,
+                          line.tip = 0.02,
+                          line.width = 1,
+                          label = NULL,
+                          text.size = 4,
+                          text.hjust = 1,
+                          text.vjust = 0.5,
+                          parse = FALSE,
+                          color = "black"){
+
+  x_range <- layer_scales(gg)$x$get_limits()
+  if(!is.numeric(x_range)){
+    x_range <- ggplot_build(gg)$layout$panel_scales_x[[1]]$range_c$range
+  }
+  nudge_x <- diff(x_range)*0.01
+  
+  gg <- geom_vbracket(gg,x,y,line.tip,line.width,color) +
+    
+    annotate(geom = "text",
+             x = x + nudge_x*text.hjust,
+             y = y[1]  + text.vjust*diff(y),
+             label = label,
+             size = text.size,
+             color = color,
+             hjust = ifelse(text.hjust==1,0,1),
+             parse = parse)
+  return(gg)
+}
+
+
+geom_vbracket_1 <- function(gg,
+                          x,
+                          y,
+                          xend,
+                          yend,
+                          type = 4,
+                          tip.length = 0.02,
+                          width = 1,
+                          color = "black"){
+  #  y_range <- ggplot_build(gg)$layout$panel_scales_y[[1]]$range$range
+  #  y_range <- layer_scales(gg)$y$range$range
+  y_range <- layer_scales(gg)$y$get_limits()
+  y_diff <- diff(y_range)
+  y_diff_expand <- y_diff*1.05
+  y_limits <- y_range + c(- 0.5*(y_diff_expand - y_diff),
+                          0.5*(y_diff_expand - y_diff))
+  x_range <- layer_scales(gg)$x$get_limits()
+  if(!is.numeric(x_range)){
+    x_range <- ggplot_build(gg)$layout$panel_scales_x[[1]]$range_c$range
+  }
+  x1 <- (x - x_range[1])/diff(x_range)
+  x2 <- (xend - x_range[1])/diff(x_range)
+  y1 <- (y - y_limits[1])/y_diff_expand
+  y2 <- (yend - y_limits[1])/y_diff_expand
+  
+  b1 <- bracketsGrob(x1, y1, x2, y2,
+                     type = type,
+                     h = tip.length,
+                     lwd = width,
+                     col = color)
+  return(b1)
+}
+
+```
+
+
+```{r}
+testy <- function(fit_emm){
+  exp1c_m1_emm_dt <- fit_emm %>%
+    summary()
+  b <- exp1c_m1_emm_dt[2, "emmean"]
+  gg <- ggplot(data = exp1c_m1_emm_dt,
+         aes(x = hac,
+             y = emmean)) +
+    geom_point() +
+    geom_hline(yintercept = b) +
+    geom_hline(yintercept = exp1c_m1_emm_dt[1, "emmean"]) +
+    geom_segment(x = 1,
+                 y = exp1c_m1_emm_dt[1, "emmean"],
+                 xend = 2,
+                 yend = exp1c_m1_emm_dt[4, "emmean"]) +
+    annotate(geom = "text",
+             x = 1.5,
+             y = 30,
+             label = "test") +
+    theme_pubr()
+  return(gg)
+}
+```
+
+# geom_ancova
+
+```{r}
+StatLm <- ggproto("StatLm", Stat, 
+  required_aes = c("x", "y"),
+  
+  compute_group = function(data, scales) {
+    rng <- range(data$x, na.rm = TRUE)
+    grid <- data.frame(x = rng)
+    
+    mod <- lm(y ~ x, data = data)
+    grid$y <- predict(mod, newdata = grid)
+    
+    grid
+  }
+)
+
+stat_lm <- function(mapping = NULL, data = NULL, geom = "line",
+                    position = "identity", na.rm = FALSE,
+                    show.legend = NA, 
+                    inherit.aes = TRUE, ...) {
+  layer(
+    stat = StatLm, data = data, mapping = mapping,
+    geom = geom, position = position,
+    show.legend = show.legend, inherit.aes = inherit.aes,
+    params = list(na.rm = na.rm, ...)
+  )
+}
+
+StatAncova <- ggproto("StatAncova", Stat, 
+  required_aes = c("x", "y"),
+  
+  compute_group = function(data, scales) {
+    rng <- range(data$x, na.rm = TRUE)
+    groups <- unique(data$group)
+    n_group <- length(groups)
+    grid <- data.frame(x = rep(rng, n_group),
+                       group = rep(groups, each = 2))
+    mod <- lm(y ~ x + group, data = data)
+    grid$y <- predict(mod, newdata = grid)
+    
+    grid
+  }
+)
+
+stat_ancova <- function(mapping = NULL,
+                        data = NULL,
+                        geom = "line",
+                        position = "identity",
+                        na.rm = FALSE,
+                        show.legend = NA,
+                        inherit.aes = TRUE, ...) {
+  layer(
+    stat = StatAncova, data = data, mapping = mapping,
+    geom = geom, position = position,
+    show.legend = show.legend, inherit.aes = inherit.aes,
+    params = list(na.rm = na.rm, ...)
+  )
+}
+
+```
+
+```{r geom_ancova}
+
+geom_ancova <- function(m1){
+  geom_smooth(method = "lm",
+              mapping = aes(y = predict(m1))
+  )
+}
+
+```
+
+
+
+```{r kable_bind}
+kable_bind <- function(tables, styling = TRUE, ...){
+  p <- length(tables)
+  table_out <- NULL
+  rows <- numeric(p)
+  for(i in 1:p){
+    rows[i] <- nrow(tables[[i]])
+    table_out <- rbind(table_out, tables[[i]])
+  }
+  
+  table_kable <- kable(table_out, ...)
+  for(i in 1:p){
+    row2 <- sum(rows[1:i])
+    row1 <- sum(rows[1:i]) - rows[i] + 1
+    table_kable <- table_kable %>%
+      pack_rows(names(tables[i]), row1, row2)
+  }
+  
+  if(styling == TRUE){
+    table_kable <- table_kable %>%
+    kable_styling()
+  }
+  
+  return(table_kable)
+}
+  
+```
+
+
+
+```{r}
+fill_down <- function(x){
+  treatment_levels <- na.omit(unique(x))
+  xf <- factor(x, levels = treatment_levels)
+  xi <- as.integer(xf) %>%
+    nafill(type = "locf")
+  xn <- treatment_levels[xi]
+  return(xn)
+}
+```
+
+```{r}
+na_only_omit <- function(x){
+  x <- x[rowSums(is.na(x)) != ncol(x), ]
+  return(x)
+}
+```
+
+```{r output-as-R-file}
+# highlight and run to put update into R folder
+# knitr::purl("ggplot_the_model.Rmd")
+```
+

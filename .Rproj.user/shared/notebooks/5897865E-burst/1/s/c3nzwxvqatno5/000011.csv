@@ -1,0 +1,3 @@
+"0",""
+"0","simons_summary <- simons[, .(wind_speed = mean(wind_speed)), by = .(treatment, sex, line)]"
+"0","simons_summary"

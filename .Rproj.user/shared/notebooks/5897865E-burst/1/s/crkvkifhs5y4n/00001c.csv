@@ -1,0 +1,10 @@
+"0","# compute conditional means
+newdat <- expand.grid(
+  line = levels(simons$line),
+  sex = levels(simons$sex)
+) |>
+  data.table
+"
+"2","Error in data.table : 
+  The pipe operator requires a function call as RHS (<input>:5:3)
+"

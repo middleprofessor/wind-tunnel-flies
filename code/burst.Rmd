@@ -98,7 +98,6 @@ simons_summary
 lm_ancova <- lm(wind_speed ~ treatment * sex + room_temp, data = simons)
 coef(summary(lm_ancova))
 
-
 ggplot(data = simons,
        aes(x = room_temp,
            y = wind_speed,
@@ -124,19 +123,23 @@ cn_m <- c(1,0,0,0)
 aa_m <- c(0,1,0,0)
 cn_f <- c(0,0,1,0)
 aa_f <- c(0,0,0,1)
-aa_contrast <- list(
+simons_contrast <- list(
   list(male = aa_m - cn_m),
   list(female = aa_f - cn_f)
 )
 
 lmm_all_pairs <- contrast(lmm_all_emm,
-                      method = aa_contrast) |>
+                      method = simons_contrast,
+                      adjust = "none") |>
   summary(infer = TRUE) |>
   data.table()
 lmm_all_pairs[, effect_std := estimate / sigma]
 
 lmm_all_emm
 lmm_all_pairs
+
+# save the emmmeans
+simons_emm <- lmm_all_emm
 ```
 
 ### Plot
@@ -228,14 +231,15 @@ means_plot <- function(plot_sex = "F", title = "Female"){
                   width = 0) +
     
     # clean plot
-    ylab("Max Burst Speed (cm/s)") +
+    ylab("Max Wind Speed (cm/s)") +
     scale_color_manual(values = pal_okabe_ito) +
     scale_x_continuous(breaks = x_breaks,
                        labels = c("CN1", "CN2", "AA1", "AA2")) +
     theme_pubr() +
     theme(legend.position="none",
           axis.title.x = element_blank()) +
-    coord_cartesian(xlim = c(0.7, 2.3)) +
+    coord_cartesian(ylim = c(90, 210),
+                    xlim = c(0.7, 2.3)) +
     ggtitle(title)
   return(gg)
 }
@@ -255,17 +259,9 @@ sigma <- summary(lmm_all)$sigma
 
 lmm_all_emm <- emmeans(lmm_all, specs = c("treatment", "sex"))
 
-cn_m <- c(1,0,0,0)
-aa_m <- c(0,1,0,0)
-cn_f <- c(0,0,1,0)
-aa_f <- c(0,0,0,1)
-aa_contrast <- list(
-  list(male = aa_m - cn_m),
-  list(female = aa_f - cn_f)
-)
-
 lmm_all_pairs <- contrast(lmm_all_emm,
-                      method = aa_contrast) |>
+                      method = simons_contrast,
+                      adjust = "none") |>
   summary(infer = TRUE) |>
   data.table()
 lmm_all_pairs[, effect_std := estimate / sigma]
@@ -285,8 +281,7 @@ m1_male <- aov(wind_speed ~ treatment + Error(line),
 ```
 
 
-
-```{r}
+```{r lmm-by-sex}
 lmm_m <- lmer(wind_speed ~ treatment + (1 | line), data = simons[sex == "M"])
 lmm_f <- lmer(wind_speed ~ treatment + (1 | line), data = simons[sex == "F"])
 lmm_m_emm <- emmeans(lmm_m, specs = "treatment")
@@ -301,34 +296,8 @@ ggptm(lmm_m, lmm_m_emm, lmm_m_pairs, show_nest_data = TRUE, nest_id = "line")
 ggptm(lmm_f, lmm_f_emm, lmm_f_pairs, show_nest_data = TRUE, nest_id = "line")
 ```
 
-
-Some plots
-
-```{r}
-ggptm(lmm_all, lmm_all_emm, lmm_all_pairs, show_nest_data = TRUE, nest_id = "line")
-```
-
-
-```{r}
-set.seed(1) # for jitter
-
-
-group_list <- c( "CN1 M", "CN2 M", "CN1 F", "CN2 F", "AA1 M", "AA2 M", "AA1 F", "AA2 F")
-simons[, group := paste(line, sex) |>
-        factor(levels = group_list)]
-simons[, x := as.integer(group) + rnorm(n = nrow(simons), sd = 0.1)]
-
-label_list <- str_replace_all(group_list, " ", "\n")
-ggplot(data = simons,
-       aes(x = x,
-           y = wind_speed)) +
-  geom_point() +
-  scale_x_continuous(breaks = 1:8, labels = label_list) +
-  ylab("Max Burst Speed (cm/s)") +
-  theme_pubr()
-```
-
-## Jess Wheeler data
+## Wheeler data
+### Clean and Import
 ```{r jess-clean-his-files}
 subfolder <- "burst speed/jess wheeler/sent from jess/raw"
 filename <- "02.14.10.xlsx"
@@ -383,8 +352,12 @@ for(i in 1:length(files)){
   # length is flight distance over 1 frame
   colnames(file_i)[1] <- "id"
   file_i[, treatment := substr(id,1,2)]
-  file_i[, line := substr(id,1,3)]
-  file_i[, sex := substr(id, 4,4)]
+  file_i[, line := substr(id,1,3) |> 
+           toupper() |>
+           factor()]
+  file_i[, sex := substr(id, 4,4) |> 
+           toupper() |>
+           factor()]
   file_i[, dial := substr(id, 5,6) |> as.integer()]
   file_i[, date := substr(id, 8,15)]
   
@@ -403,10 +376,19 @@ for(i in 1:length(files)){
   
 }
 
+  # clean treatments and make factor
+  jess[treatment == "aa", treatment := "AA"]
+  jess[treatment == "cn", treatment := "CN"]
+  jess[treatment == "k4", treatment := "K45"]
+  jess[treatment == "n6", treatment := "N60"]
+  jess[, treatment := factor(treatment, levels = 
+                                 c("AA", "CN", "K45", "N60"))]
+
+
 ```
 
 ```{r jess-summary}
-
+# this is just to compare counts with Jess' thesis table
 # first compute max within each id
 jess_max_id <- jess[, .(wind_max = mean(wind_jess),
                         vel_max = mean(vel),
@@ -420,28 +402,251 @@ jess_sum <- jess_max_id[, .(wind_max = mean(wind_max),
 setorder(jess_sum, sex, treatment, line, date)
 ```
 
-```{r jess-analysis}
-lmm1 <- lmer(wind_max ~ treatment + (1 | line), data = jess_sum[sex == "f"])
-lmm1_means <- emmeans(lmm1, specs = "treatment")
-lmm1_pairs <- contrast(lmm1_means,
-                       method = "trt.vs.ctrl",
-                       adjust = "none") |>
-  summary(infer = TRUE)
-ggptm(lmm1, lmm1_means, lmm1_pairs,
-      nest_id = "line",
-      show_nest_data = TRUE)
+### Primary data set
 
-lmm1 <- lmer(wind_max ~ treatment + (1 | line), data = jess_sum[sex == "m"])
-lmm1_means <- emmeans(lmm1, specs = "treatment")
-lmm1_pairs <- contrast(lmm1_means,
-                       method = "trt.vs.ctrl",
-                       adjust = "none") |>
-  summary(infer = TRUE)
-ggptm(lmm1, lmm1_means, lmm1_pairs,
-      nest_id = "line",
-      show_nest_data = TRUE)
+To compare to Simons-Walker results, I am using wind tunnel speed and not the computed speed of the fly. But I will analyze that in a supplement. Jess has 3 measures per fly; since these are at same tunnel speed, I just need to obtain the summary data as the primary data set.
+
+```{r jess-primary-data}
+jess_primary <- jess[, .(wind_speed = mean(wind_jess)), 
+                     by = .(id, treatment, line, sex)]
+```
+
+### Estimate Treatment Effects
+
+```{r wheeler-lmm-random-intercept}
+lmm_all <- lmer(wind_speed ~ treatment * sex + (1 | line), data = jess_primary)
+coef(summary(lmm_all))
+sigma <- summary(lmm_all)$sigma
+
+lmm_all_emm <- emmeans(lmm_all, specs = c("treatment", "sex"))
+
+aa_f <- c(1,0,0,0,0,0,0,0)
+cn_f <- c(0,1,0,0,0,0,0,0)
+k45_f <- c(0,0,1,0,0,0,0,0)
+n60_f <- c(0,0,0,1,0,0,0,0)
+aa_m <- c(0,0,0,0,1,0,0,0)
+cn_m <- c(0,0,0,0,0,1,0,0)
+k45_m <- c(0,0,0,0,0,0,1,0)
+n60_m <- c(0,0,0,0,0,0,0,1)
+
+# contrasts of interest - this is all contrasts, just not m v f
+# aa - cn # primary contrast
+# aa - k45 # secondary contrast testing comparison with newer line
+# aa - n60 # secondary contrast testing comparison with newer line
+# cn - k45 # secondary contrast testing loss in cn
+# cn - n60 # secondary contrast testing loss in cn
+# n60 - k45 # n60 is july 2009 and k45 is july 2008
+
+jess_contrasts <- list(
+  list(aa_cn_male = aa_m - cn_m),
+  list(aa_k45_male = aa_m - k45_m),
+  list(aa_n60_male = aa_m - n60_m),
+  list(cn_k45_male = cn_m - k45_m),
+  list(cn_n60_male = cn_m - n60_m),
+  list(n60_k45_male = n60_m - k45_m),
+  list(aa_cn_female = aa_f - cn_f),
+  list(aa_k45_female = aa_f - k45_f),
+  list(aa_n60_female = aa_f - n60_f),
+  list(cn_k45_female = cn_f - k45_f),
+  list(cn_n60_female = cn_f - n60_f),
+  list(n60_k45_female = n60_f - k45_f)
+)
+
+lmm_all_pairs <- contrast(lmm_all_emm,
+                      method = jess_contrasts,
+                      adjust = "none") |>
+  summary(infer = TRUE) |>
+  data.table()
+lmm_all_pairs[, effect_std := estimate / sigma]
+
+lmm_all_emm
+lmm_all_pairs
+
+wheeler_emm <- lmm_all_emm
+```
+
+### Plot
+
+```{r jess-conditional-means}
+# compute conditional means
+newdat <- expand.grid(
+  line = levels(jess_primary$line),
+  sex = levels(jess_primary$sex)
+) |>
+  data.table()
+# newdat[, treatment := line]
+# newdat[substr(line,1,2) == "aa", treatment := "aa"]
+# newdat[substr(line,1,2) == "cn", treatment := "cn"]
+newdat[, treatment := substr(line,1,2)]
+newdat[treatment == "K4", treatment := "K45"]
+newdat[treatment == "N6", treatment := "N60"]
+newdat[, fit := predict(lmm_all, newdata = newdat)]
 
 ```
+
+```{r wheeler-conditional-mean-plot}
+
+means_plot <- function(plot_sex = "F", title = "Female"){
+  offset <- 0.15
+  x_breaks <- c(1-offset, 1+offset, 2-offset, 2+offset,
+                3, 4)
+  
+  plot_data <- jess_primary[, .SD, .SDcols = c("treatment", "line", "sex", "wind_speed")]
+  treatment_means <- lmm_all_emm |> 
+    summary() |>
+    data.table()
+  treatment_means[treatment == "CN", x := 1]
+  treatment_means[treatment == "AA", x := 2]
+  treatment_means[treatment == "K45", x := 3]
+  treatment_means[treatment == "N60", x := 4]
+  plot_data[line == "CN2", x := 1 + offset]
+  plot_data[line == "CN1", x := 1 - offset]
+  plot_data[line == "CN2", x := 1 + offset]
+  plot_data[line == "AA1", x := 2 - offset]
+  plot_data[line == "AA2", x := 2 + offset]
+  plot_data[line == "K45", x := 3]
+  plot_data[line == "N60", x := 4]
+  newdat[line == "CN1", x := 1 - offset]
+  newdat[line == "CN2", x := 1 + offset]
+  newdat[line == "AA1", x := 2 - offset]
+  newdat[line == "AA2", x := 2 + offset]
+  newdat[line == "K45", x := 3]
+  newdat[line == "N60", x := 4]
+  simons_means <- simons_emm |> 
+    summary() |>
+    data.table()
+  simons_means[treatment == "CN", x := 1]
+  simons_means[treatment == "AA", x := 2]
+
+  gg <- ggplot(data = plot_data[sex == plot_sex],
+               aes(x = x,
+                   y = wind_speed,
+                   color = treatment)) +
+    
+    # raw data
+    # geom_sina(maxwidth = 0.5,
+    #           color = "gray") +
+    geom_jitter(width = 0.05,
+                height = 0,
+                color = "gray") +
+
+    # line means
+    geom_point(data = newdat[sex == plot_sex],
+               aes(x = x,
+                   y = fit),
+               size = 2) +
+    
+    # treatment means and CI
+    geom_point(data = treatment_means[sex == plot_sex],
+               aes(x = x,
+                   y = emmean),
+               size = 3) +
+    geom_errorbar(data = treatment_means[sex == plot_sex],
+                  aes(x = x,
+                      y = emmean,
+                      ymin = lower.CL,
+                      ymax = upper.CL),
+                  width = 0) +
+    
+    # simons treatment means
+    geom_point(data = simons_means[sex == plot_sex],
+               aes(x = x,
+                   y = emmean),
+               size = 3,
+               shape = 4) +
+    
+    # clean plot
+    ylab("Max Wind Speed (cm/s)") +
+    scale_color_manual(values = pal_okabe_ito) +
+    scale_x_continuous(breaks = x_breaks,
+                       labels = c("CN1", "CN2", "AA1", "AA2", "K45", "N60")) +
+    theme_pubr() +
+    theme(legend.position="none",
+          axis.title.x = element_blank()) +
+    coord_cartesian(ylim = c(0, 250),
+                    xlim = c(0.7, 4.3)) +
+    ggtitle(title)
+  return(gg)
+}
+
+gg_f <- means_plot(plot_sex = "F", title = "Female")
+gg_m <- means_plot(plot_sex = "M", title = "Male")
+plot_grid(gg_f, gg_m, ncol = 2)
+```
+
+```{r wheeler-conditional-mean-plot-violin}
+
+means_plot <- function(plot_sex = "F", title = "Female"){
+  offset <- 0.15
+  x_breaks <- c(1-offset, 1+offset, 2-offset, 2+offset,
+                3, 4)
+  
+  plot_data <- jess_primary[, .SD, .SDcols = c("treatment", "line", "sex", "wind_speed")]
+  treatment_means <- lmm_all_emm |> 
+    summary() |>
+    data.table()
+  treatment_means[treatment == "CN", x := 1]
+  treatment_means[treatment == "AA", x := 2]
+  treatment_means[treatment == "K45", x := 3]
+  treatment_means[treatment == "N60", x := 4]
+  plot_data[line == "CN2", x := 1 + offset]
+  plot_data[line == "CN1", x := 1 - offset]
+  plot_data[line == "CN2", x := 1 + offset]
+  plot_data[line == "AA1", x := 2 - offset]
+  plot_data[line == "AA2", x := 2 + offset]
+  plot_data[line == "K45", x := 3]
+  plot_data[line == "N60", x := 4]
+  newdat[line == "CN1", x := 1 - offset]
+  newdat[line == "CN2", x := 1 + offset]
+  newdat[line == "AA1", x := 2 - offset]
+  newdat[line == "AA2", x := 2 + offset]
+  newdat[line == "K45", x := 3]
+  newdat[line == "N60", x := 4]
+  simons_means <- simons_emm |> 
+    summary() |>
+    data.table()
+  simons_means[treatment == "CN", x := 3.5]
+  simons_means[treatment == "AA", x := 1.5]
+
+  gg <- ggplot(data = jess_primary[sex == plot_sex],
+               aes(x = line,
+                   y = wind_speed,
+                   color = treatment)) +
+    
+    # raw data
+    # geom_sina(maxwidth = 0.5,
+    #           color = "gray") +
+    # geom_jitter(width = 0.05,
+    #             height = 0,
+    #             color = "gray") +
+
+    # geom_violin() +
+    
+    geom_boxplot() +
+
+    # simons treatment means
+    geom_point(data = simons_means[sex == plot_sex],
+               aes(x = x,
+                   y = emmean),
+               size = 3,
+               shape = 4) +
+
+    # clean plot
+    ylab("Max Wind Speed (cm/s)") +
+    scale_color_manual(values = pal_okabe_ito) +
+    theme_pubr() +
+    theme(legend.position="none",
+          axis.title.x = element_blank()) +
+    coord_cartesian(ylim = c(25, 225)) +
+    ggtitle(title)
+  return(gg)
+}
+
+gg_f <- means_plot(plot_sex = "F", title = "Female")
+gg_m <- means_plot(plot_sex = "M", title = "Male")
+plot_grid(gg_f, gg_m, ncol = 2)
+```
+
 
 ## Combined
 

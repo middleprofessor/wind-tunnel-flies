@@ -77,9 +77,12 @@ exp1[, sex := factor(sex, levels = c("M", "F"))]
 exp1[, line := paste0(treatment, line) |>
        factor(levels = c("CN1", "CN2", "AA1", "AA2"))]
 exp1[, wind_speed := dial_50 * dial_to_speed]
-exp1[, group := ifelse(treatment == "AA", "Selection", "No Selection") |> factor(levels=c("Selection", "No Selection"))]
+exp1[, group := ifelse(treatment == "AA", "Selection", "No Selection") |> factor(levels=c("No Selection", "Selection"))]
 ```
 
+```{r exp1-checks}
+exp1[, .(max = max(wind_speed)), by = .(line, sex)]
+```
 
 ```{r exp1-init-plot}
 ggplot(data = exp1,
@@ -381,7 +384,8 @@ for(i in 1:length(files)){
   exp2[treatment == "CN", group := "No Selection"]
   exp2[treatment == "Wild", group := "Wild"]
   exp2[, group := factor(group,
-                         levels = c("No Selection", "Selection",
+                         levels = c("No Selection",
+                                    "Selection",
                                     "Wild"))]
 
 ```
@@ -534,7 +538,9 @@ means_plot <- function(plot_sex = "F", title = "Female"){
     
     # clean plot
     ylab("Max Opposing Wind Speed (cm/s)") +
-    scale_color_manual(values = pal_okabe_ito) +
+    scale_color_manual(values = c(pal_okabe_ito[1],
+                                  pal_okabe_ito[3],
+                                  pal_okabe_ito[2])) +
     scale_x_continuous(breaks = x_breaks,
                        labels = c("CN\n1", "CN\n2",
                                   "Wild\nK45", "Wild\nN60",
@@ -616,8 +622,8 @@ burst[, exp_line := factor(exp_line, levels = c(
   "Exp2\nK45", "Exp2\nN60"
 ))]
 
-title <- "Female"
-gg_f <- ggplot(data = burst[sex == "F"],
+combined_plot <- function(sex_in = "F", title = "Female"){
+  gg <- ggplot(data = burst[sex == sex_in],
                aes(x = exp_line,
                    y = wind_speed,
                    color = group)) +
@@ -631,9 +637,13 @@ gg_f <- ggplot(data = burst[sex == "F"],
   theme(legend.position="none",
         axis.title.x = element_blank()) +
   ggtitle(title)
+  return(gg)
+}
 
+gg_f <- combined_plot(sex = "F", title = "Female")
 gg_f
-
+gg_m <- combined_plot(sex = "M", title = "Male")
+gg_m
 ```
 
 # Kinematic analysis

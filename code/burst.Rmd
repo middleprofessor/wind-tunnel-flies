@@ -18,7 +18,7 @@ library(stringr) # text wrangling
 library(lme4)
 library(lmerTest)
 library(emmeans) # the workhorse for inference
-
+library(sf)
 
 # graphing packages
 library(ggsci) # color palettes
@@ -27,6 +27,7 @@ library(ggforce) # better jitter
 library(cowplot) # combine plots
 library(knitr) # kable tables
 library(kableExtra) # kable_styling tables
+library(jpeg)
 
 # ggplot_the_model.R packages not loaded above
 library(insight)
@@ -47,6 +48,7 @@ transpose <- data.table::transpose
 
 source(here("code", "ggplot_the_model.R"))
 source(here("code", "ggptm.R"))
+source(here("code", "superimposition.R"))
 
 data_folder <- "data"
 
@@ -54,7 +56,6 @@ data_folder <- "data"
 dial_to_speed <- 6.42237212 # from my smoke test with screens and forcing through origin
 
 ```
-
 
 # Burst analysis
 ## Experiment 1 (Simons-Walker)
@@ -119,7 +120,7 @@ exp1[, .(N = .N), by = .(line, sex)]
 ```{r exp1-lmm-random-intercept}
 exp1_lmm <- lmer(wind_speed ~ treatment * sex + (1 | line), data = exp1)
 coef(summary(exp1_lmm))
-sigma <- summary(exp1_lmm)$sigma
+exp1_sigma <- summary(exp1_lmm)$sigma
 
 exp1_emm <- emmeans(exp1_lmm, specs = c("treatment", "sex"))
 
@@ -128,8 +129,8 @@ aa_m <- c(0,1,0,0)
 cn_f <- c(0,0,1,0)
 aa_f <- c(0,0,0,1)
 exp1_contrast <- list(
-  list(male = aa_m - cn_m),
-  list(female = aa_f - cn_f)
+  list("F: AA - CN" = aa_f - cn_f),
+  list("M: AA - CN" = aa_m - cn_m)
 )
 
 exp1_pairs <- contrast(exp1_emm,
@@ -137,7 +138,11 @@ exp1_pairs <- contrast(exp1_emm,
                       adjust = "none") |>
   summary(infer = TRUE) |>
   data.table()
-exp1_pairs[, effect_std := estimate / sigma]
+exp1_pairs[, effect_std := estimate / exp1_sigma]
+# reorder for plot
+exp1_pairs[, contrast := factor(contrast,
+                                levels = c("M: AA - CN",
+                                           "F: AA - CN"))]
 
 exp1_emm
 exp1_pairs
@@ -246,13 +251,27 @@ means_plot <- function(plot_sex = "F", title = "Female"){
   return(gg)
 }
 
-diff_plot <- function(){
-  gg <- ggplot(data = )
-}
-
 gg_f <- means_plot(plot_sex = "F", title = "Female")
 gg_m <- means_plot(plot_sex = "M", title = "Male")
 plot_grid(gg_f, gg_m, ncol = 2)
+```
+
+```{r exp1-effect-plot}
+gg <- ggplot(data = exp1_pairs,
+             aes(y = contrast,
+                 x = estimate)) +
+  geom_point() +
+  geom_errorbar(aes(xmin = lower.CL,
+                    xmax = upper.CL),
+                width = 0.2) +
+  coord_cartesian(xlim = c(-20, 100)) +
+  xlab("Effect (cm/s)") +
+  ylab("") +
+  scale_x_continuous(
+    sec.axis = sec_axis(trans = ~ . / exp1_sigma, name = "Standardized Effect")) +
+  theme(axis.title.y = element_blank()) +
+  theme_pubr()
+gg
 ```
 
 ### Other models
@@ -419,7 +438,7 @@ exp2_primary <- exp2[, .(wind_speed = mean(wind_jess)),
 ```{r exp2-lmm-random-intercept}
 exp2_lmm <- lmer(wind_speed ~ treatment * sex + (1 | line), data = exp2_primary)
 coef(summary(exp2_lmm))
-sigma <- summary(exp2_lmm)$sigma
+exp2_sigma <- summary(exp2_lmm)$sigma
 
 exp2_emm <- emmeans(exp2_lmm, specs = c("treatment", "sex"))
 
@@ -439,12 +458,12 @@ aa_m <- c(0,0,0,0,0,1)
 # n60 - k45 # n60 is july 2009 and k45 is july 2008
 
 exp2_contrasts <- list(
-  list(aa_cn_male = aa_m - cn_m),
-  list(aa_wt_male = aa_m - wild_m),
-  list(cn_wt_male = cn_m - wild_m),
-  list(aa_cn_female = aa_f - cn_f),
-  list(aa_wt_female = aa_f - wild_f),
-  list(cn_wt_female = cn_f - wild_f)
+  list("F: AA - CN" = aa_f - cn_f),
+  list("F: AA - WT" = aa_f - wild_f),
+  list("F: CN - WT" = cn_f - wild_f),
+  list("M: AA - CN" = aa_m - cn_m),
+  list("M: AA - WT" = aa_m - wild_m),
+  list("M: CN - WT" = cn_m - wild_m)
 )
 
 exp2_pairs <- contrast(exp2_emm,
@@ -453,6 +472,14 @@ exp2_pairs <- contrast(exp2_emm,
   summary(infer = TRUE) |>
   data.table()
 exp2_pairs[, effect_std := estimate / sigma]
+# set up order for effects plot
+exp2_pairs[, contrast := factor(contrast,
+                                levels = c("M: CN - WT",
+                                           "M: AA - WT",
+                                           "M: AA - CN",
+                                           "F: CN - WT",
+                                           "F: AA - WT",
+                                           "F: AA - CN"))]
 
 exp2_emm
 exp2_pairs
@@ -557,6 +584,24 @@ means_plot <- function(plot_sex = "F", title = "Female"){
 gg_f <- means_plot(plot_sex = "F", title = "Female")
 gg_m <- means_plot(plot_sex = "M", title = "Male")
 plot_grid(gg_f, gg_m, ncol = 2)
+```
+
+```{r exp2-effects-plot}
+gg <- ggplot(data = exp2_pairs,
+             aes(y = contrast,
+                 x = estimate)) +
+  geom_point() +
+  geom_errorbar(aes(xmin = lower.CL,
+                    xmax = upper.CL),
+                width = 0.2) +
+  coord_cartesian(xlim = c(-65, 100)) +
+  xlab("Effect (cm/s)") +
+  ylab("") +
+  scale_x_continuous(
+    sec.axis = sec_axis(trans = ~ . / exp1_sigma, name = "Standardized Effect")) +
+  theme(axis.title.y = element_blank()) +
+  theme_pubr()
+gg
 ```
 
 ```{r exp2-conditional-mean-plot-violin}
@@ -731,3 +776,595 @@ ggplot(data = free_flight_init[sex == "F"],
 
 
 # Wingshape analysis
+
+For wing anatomy, see https://flybase.org/reports/FBim0000853?utm_source=chatgpt.com
+
+```{r superiimposed-wing-landmarks}
+
+# run this in console
+# quartz()
+# then run the code and click on the 4 landmarks where wing veins intersect the perimeter
+image_file <- "wing_image/WXA1FA2.jpg"
+image_file <- "wing_image/WXA2FA1.jpg"
+image_path <- here(image_file)
+img <- readJPEG(image_path)
+
+
+h <- dim(img)[1]
+w <- dim(img)[2]
+
+plot(
+  NA,
+  xlim = c(0, w),
+  ylim = c(h, 0),
+  asp = 1,
+  xaxs = "i",
+  yaxs = "i",
+  xlab = "",
+  ylab = ""
+)
+
+rasterImage(img, 0, h, w, 0)
+
+
+known <- c(12, 17, 21, 27)
+# Display image first, then click landmarks in exactly this order:
+# 12, 17, 21, 27
+pix <- locator(4)
+
+pixel <- data.table(
+  point = known,
+  X = pix$x,
+  Y = pix$y
+)
+```
+
+```{r superimpose-landmarks-on-wing}
+# registration coordinates
+reg_file <- "wing_image/WXA2FA1_reg.txt"
+reg_path <- here(reg_file)
+pixel <- fread(reg_path)
+
+# landmarks
+lm_file <- "wing_image/WXA2FA1pp.txt"
+lm_path <- here(lm_file)
+xy <- fread(lm_path, nrows = 37,
+            col.names = c("x", "y"))
+
+xy[, point := 1:.N]
+
+reg <- merge(xy, pixel, by = "point")
+
+M <- rbind(
+  cbind(1, 0,  reg$x, -reg$y),
+  cbind(0, 1,  reg$y,  reg$x)
+)
+
+z <- c(reg$X, reg$Y)
+
+A <- do.call(rbind, lapply(seq_len(nrow(reg)), function(i) {
+  x <- reg$x[i]
+  y <- reg$y[i]
+
+  rbind(
+    c(1, 0, x, -y),
+    c(0, 1, y,  x)
+  )
+}))
+
+z <- as.vector(t(as.matrix(reg[, .(X, Y)])))
+
+coef <- qr.solve(A, z)
+
+a <- coef[1]
+d <- coef[2]
+b <- coef[3]
+c <- coef[4]
+
+# transform all points
+xy[, X := a + b*x - c*y]
+xy[, Y := d + c*x + b*y]
+
+# ggplot
+ggplot() +
+  annotation_raster(
+    img,
+    xmin = 0,
+    xmax = w,
+    ymin = h,
+    ymax = 0
+  ) +
+  geom_path(
+    data = xy,
+    aes(X, Y),
+    linewidth = 0.4,
+    color = "red"
+  ) +
+  geom_point(
+    data = xy,
+    aes(X, Y),
+    color = "red",
+    size = 2
+  ) +
+  geom_text(
+    data = xy,
+    aes(X, Y, label = point),
+    nudge_y = -15,
+    size = 3
+  ) +
+  scale_y_reverse(limits = c(h, 0)) +
+  coord_fixed(
+    xlim = c(0, w),
+    ylim = c(h, 0),
+    expand = FALSE
+  ) +
+  theme_void()
+```
+
+
+
+## Aerodynamics chunks
+```{r wing-metrics}
+wing_metrics <- function(x, y, hinge = 1, tip = 17) {
+
+  ## ------------------------------------------------------------
+  ## 1. Translate so hinge (LM1) is at the origin
+  ## ------------------------------------------------------------
+
+  x0 <- x - x[hinge]
+  y0 <- y - y[hinge]
+
+
+  ## ------------------------------------------------------------
+  ## 2. Rotate so hinge -> tip (LM17) is the radial x-axis
+  ## ------------------------------------------------------------
+
+  theta <- atan2(y0[tip], x0[tip])
+
+  xr <-  x0 * cos(theta) + y0 * sin(theta)
+  yr <- -x0 * sin(theta) + y0 * cos(theta)
+
+  ## Wing length: hinge -> tip
+  R <- sqrt(x0[tip]^2 + y0[tip]^2)
+
+
+  ## ------------------------------------------------------------
+  ## 3. Polygon integrals
+  ## ------------------------------------------------------------
+
+  # next vertex around perimeter
+  x2 <- c(xr[-1], xr[1])
+  y2 <- c(yr[-1], yr[1])
+
+  cross <- xr * y2 - x2 * yr
+
+  # signed area
+  As <- sum(cross) / 2
+
+  # make formulas independent of clockwise/counterclockwise digitizing
+  s <- sign(As)
+  A <- abs(As)
+
+  # centroid
+  xbar <- sum((xr + x2) * cross) / (6 * As)
+  ybar <- sum((yr + y2) * cross) / (6 * As)
+
+  # second moments of AREA about hinge-defined axes
+  #
+  # Ixx = integral y^2 dA   (chordwise distribution)
+  # Iyy = integral x^2 dA   (radial distribution)
+  #
+  Ixx <- s * sum(
+    (yr^2 + yr*y2 + y2^2) * cross
+  ) / 12
+
+  Iyy <- s * sum(
+    (xr^2 + xr*x2 + x2^2) * cross
+  ) / 12
+
+  # product moment
+  Ixy <- s * sum(
+    (2*xr*yr + xr*y2 + x2*yr + 2*x2*y2) * cross
+  ) / 24
+
+
+  ## ------------------------------------------------------------
+  ## 4. Derived wing metrics
+  ## ------------------------------------------------------------
+
+  # Ray-style / single-wing aspect ratio convention
+  AR <- R^2 / A
+
+  # mean chord
+  mean_chord <- A / R
+
+  # radial position of area centroid
+  xbar_hat <- xbar / R
+
+  # radius of second moment of area
+  r2 <- sqrt(Iyy / A)
+
+  # nondimensional radius of second moment
+  r2_hat <- r2 / R
+
+
+  ## ------------------------------------------------------------
+  ## 5. Return results
+  ## ------------------------------------------------------------
+
+  data.table(
+    area       = A,
+    wing_length = R,
+    mean_chord = mean_chord,
+    aspect_ratio = AR,
+
+    xbar       = xbar,
+    ybar       = ybar,
+    xbar_hat   = xbar_hat,
+
+    Ixx        = Ixx,
+    Iyy        = Iyy,
+    Ixy        = Ixy,
+
+    r2         = r2,
+    r2_hat     = r2_hat
+  )
+}
+```
+
+```{r radial-area-distribution}
+radial_area_distribution <- function(x, y, hinge = 1, tip = 17,
+                                     q = seq(0, 1, by = 0.05)) {
+
+  ## Translate hinge to origin
+  x0 <- x - x[hinge]
+  y0 <- y - y[hinge]
+
+  ## Rotate hinge -> tip onto x-axis
+  theta <- atan2(y0[tip], x0[tip])
+
+  xr <-  x0 * cos(theta) + y0 * sin(theta)
+  yr <- -x0 * sin(theta) + y0 * cos(theta)
+
+  ## Wing length
+  R <- sqrt(x0[tip]^2 + y0[tip]^2)
+
+  ## Close polygon for sf
+  xy <- cbind(xr, yr)
+  xy <- rbind(xy, xy[1, ])
+
+  wing <- st_polygon(list(xy))
+
+  total_area <- as.numeric(st_area(wing))
+
+  ## Bounds safely beyond wing
+  ymin <- min(yr) - R
+  ymax <- max(yr) + R
+  xmin <- min(xr) - R
+
+  ## For each q, calculate area with x/R <= q
+  cumulative_area <- sapply(q, function(qi) {
+
+    xmax <- qi * R
+
+    box <- st_polygon(list(matrix(
+      c(xmin, ymin,
+        xmax, ymin,
+        xmax, ymax,
+        xmin, ymax,
+        xmin, ymin),
+      ncol = 2,
+      byrow = TRUE
+    )))
+
+    intersection <- suppressWarnings(
+      st_intersection(wing, box)
+    )
+
+    if (length(intersection) == 0) {
+      0
+    } else {
+      as.numeric(st_area(intersection)) / total_area
+    }
+  })
+
+  data.table(
+    q = q,
+    cumulative_area = cumulative_area
+  )
+}
+```
+
+```{r check-daves-regional-area}
+polygon_area <- function(x, y) {
+  
+  # next point around polygon, including last -> first
+  x2 <- c(x[-1], x[1])
+  y2 <- c(y[-1], y[1])
+  
+  abs(sum(x * y2 - x2 * y) / 2)
+}
+
+
+regional_areas <- function(x, y) {
+  
+  # Total wing
+  total <- polygon_area(x, y)
+  
+  # Proximal: 1 -> 2 -> 3 -> 4 -> 5 -> 37 -> 1
+  prox_ind <- c(1:5, 37)
+  proximal <- polygon_area(x[prox_ind], y[prox_ind])
+  
+  # Middle: 5 -> ... -> 12 -> 27 -> ... -> 37 -> 5
+  mid_ind <- c(5:12, 27:37)
+  middle <- polygon_area(x[mid_ind], y[mid_ind])
+  
+  # Distal: 12 -> ... -> 27 -> 12
+  dist_ind <- 12:27
+  distal <- polygon_area(x[dist_ind], y[dist_ind])
+  
+  data.table(
+    area_total = total,
+    area_prox = proximal,
+    area_middle = middle,
+    area_distal = distal,
+    
+    prop_prox = proximal / total,
+    prop_middle = middle / total,
+    prop_distal = distal / total,
+    
+    partition_error =
+      (proximal + middle + distal) - total
+  )
+}
+```
+
+## Import wing shape data
+The list of folders are in data/wing shape/wing_files_list.txt
+
+```{r import-wing-data}
+list_in <- "data/wing shape/wing_files_list.txt"
+list_path <- here(list_in)
+folder_list <- fread(list_path, sep = "\t")[[1]]
+
+aero_labels <- c("area", "wing_length","mean_chord", "aspect_ratio", "xbar", "ybar", "xbar_hat", "Ixx", "Iyy", "Ixy", "r2", "r2_hat")
+radii <- c(.1, 0.2, 0.3)
+area_labels <- paste0("q", radii)
+area_prop_labels <- c("prop_prox")
+measure_labels <- c(aero_labels, area_labels, area_prop_labels)
+
+wing_lm <- data.table(NULL) # wing landmarks
+wing <- data.table(NULL) # wing metrics
+for(i in 1:length(folder_list)){
+  folder_i <- folder_list[i]
+  rel_folder_path <- paste0("data/wing shape/",folder_i)
+  folder_path <- here(rel_folder_path)
+  files_short <- list.files(
+    path = folder_path,
+    pattern = "\\.txt$",
+    full.names = FALSE
+  )
+  files_full <- list.files(
+    path = folder_path,
+    pattern = "\\.txt$",
+    full.names = TRUE
+  )
+  n <- length(files_full)
+  p <- length(measure_labels)
+  wing_measures <- matrix(NA, nrow = n, ncol = p)
+  colnames(wing_measures) <- measure_labels
+  fig_mat <- matrix(NA, nrow = n, ncol = 37 * 2)
+  colnames(fig_mat) <- c(paste0("x", 1:37),
+                         paste0("y", 1:37))
+  for(j in 1:n){
+    lines <- readLines(files_full[j], warn = FALSE)
+    lines <- lines[nzchar(trimws(lines))]
+    p <- length(lines) - 1
+    if(p != 37){
+      next
+    }
+    fig_lm <- fread(files_full[j], nrows = 37)
+    fig_lm[, V2 := -V2]
+
+    # save lm to a matrix for the all fly_id in folder
+    fig_mat[j,] <- c(unlist(fig_lm[, V1]),
+                     unlist(fig_lm[, V2]))
+    # compute wing metrics and save for all fly_id in folder
+    aero_j <- wing_metrics(x = fig_lm[, V1],
+                           y = fig_lm[, V2])
+    area_j <- radial_area_distribution(x = fig_lm[, V1],
+                                       y = fig_lm[, V2],
+                                       q = radii)
+    regional_j <- regional_areas(
+      x = fig_lm[, V1],
+      y = fig_lm[, V2]
+    )
+    combined_j <- c(unlist(aero_j[1,]),
+                    unlist(area_j[,2]),
+                    unlist(regional_j[1, "prop_prox"])
+                    )
+    wing_measures[j, ] <- combined_j
+    
+  }
+  # delete empty rows
+  wing_measures <- na.omit(wing_measures)
+  fig_mat <- na.omit(fig_mat)
+  
+  temp_code <- files_short
+  # save landmarks
+    wing_lm <- rbind(
+    wing_lm,
+    data.table(
+      file = str_remove(files_short, "\\.txt$"),
+      temp_id = str_sub(files_short, 2, 2),
+      line_id = str_sub(files_short, 3, 4),
+      sex = str_sub(files_short, 5, 5),
+      exp_id = str_sub(files_short, 6, 6),
+      fly_id = str_extract(files_short, "(?<=^.{6})\\d{1,2}"),
+      fig_mat
+    )
+  )
+  # save wing metrics
+  wing <- rbind(
+    wing,
+    data.table(
+      file = str_remove(files_short, "\\.txt$"),
+      temp_id = str_sub(files_short, 2, 2),
+      line_id = str_sub(files_short, 3, 4),
+      sex = str_sub(files_short, 5, 5),
+      exp_id = str_sub(files_short, 6, 6),
+      fly_id = str_extract(files_short, "(?<=^.{6})\\d{1,2}"),
+      wing_measures
+    )
+  )
+}
+
+  wing[, r2_hat_sq := r2_hat^2] # see Ray et al 2016
+  
+  wing[, treatment := ifelse(line_id == "A1" |
+                               line_id == "A2",
+                             "SEL", "WT") |>
+         factor(levels = c("WT", "SEL"))]
+ 
+  wing_lm[, treatment := ifelse(line_id == "A1" |
+                               line_id == "A2",
+                             "SEL", "WT") |>
+         factor(levels = c("WT", "SEL"))]
+  
+  # get tps coords
+  lm_cols <- do.call(paste0, expand.grid(c("x","y"), 1:37))
+  lm_mat <- wing_lm[, .SD, .SDcols = lm_cols] |>
+    as.matrix()
+  lm_array <- matrix_2_array(lm_mat)
+  lm_tpr <- tpr(lm_array, 1, 17)
+  gg <- plot_shapes(lm_tpr)
+  gg
+  
+  lm_dt_tpr <- array_2_matrix(lm_tpr) |>
+    data.table()
+  lm_cols.tpr <- paste0(lm_cols, ".tpr")
+  colnames(lm_dt_tpr) <- lm_cols.tpr
+  wing_lm <- cbind(wing_lm, lm_dt_tpr)
+  
+  lm_means <- wing_lm[, lapply(.SD, mean),
+                         by = .(treatment),
+                         .SDcols = c(lm_cols.tpr)]
+  lm_mat <- lm_means[, .SD, .SDcols = lm_cols.tpr] |>
+    as.matrix()
+  lm_tpr <- matrix_2_array(lm_mat)
+  gg <- plot_2shapes(lm_tpr, color_col = lm_means[, treatment])
+  gg
+
+
+```
+
+
+## Analysis
+```{r}
+m1f <- lm(area ~ treatment * sex, data = wing)
+m1f_emm <- emmeans(m1f, specs = c("treatment", "sex"))
+m1f_pairs <- contrast(m1f_emm,
+                      method = "revpairwise",
+                      adjust = "none") |>
+  summary(infer = TRUE)
+ggplot_the_model(m1f, m1f_emm, m1f_pairs)
+
+m1f <- lm(aspect_ratio ~ treatment * sex, data = wing)
+m1f_emm <- emmeans(m1f, specs = c("treatment", "sex"))
+m1f_pairs <- contrast(m1f_emm,
+                      method = "revpairwise",
+                      adjust = "none") |>
+  summary(infer = TRUE)
+ggplot_the_model(m1f, m1f_emm, m1f_pairs)
+
+m1f <- lm(r2_hat_sq ~ treatment * sex, data = wing)
+m1f_emm <- emmeans(m1f, specs = c("treatment", "sex"))
+m1f_pairs <- contrast(m1f_emm,
+                      method = "revpairwise",
+                      adjust = "none") |>
+  summary(infer = TRUE)
+ggplot_the_model(m1f, m1f_emm, m1f_pairs)
+
+```
+
+```{r}
+percent_change <- function(y_label){
+  r_form <- paste0("log(", y_label,
+  ") ~ treatment * temp_id * sex * exp_id + (1 | line_id)")
+  m1 <- lmer(r_form, data = wing)
+  m1_emm <- emmeans(m1,
+                    ~ treatment,
+                    weights = "equal"
+  )
+#  m1_pairs <- contrast(m1_emm, method = "revpairwise")
+  m1_pairs <- contrast(m1_emm, method = list("SEL - WT" = c(-1, 1)))
+  pairs_dt <- m1_pairs |>
+    summary() |>
+    data.table()
+  estimate <- pairs_dt[1, "estimate"]
+  change <- 100 * (exp(estimate) - 1)
+  return(unlist(c(estimate, change)))
+}
+
+change_matrix <- matrix(NA, nrow = 3, ncol = 2)
+colnames(change_matrix) <- c("estimate", "percent")
+change_matrix[1, ] <- percent_change("area")
+change_matrix[2, ] <- percent_change("aspect_ratio")
+change_matrix[3, ] <- percent_change("r2_hat_sq")
+change_dt <- data.table(
+  measure = c("area", "aspect_ratio", "r2_hat_sq"),
+  change_matrix
+)
+
+
+
+
+```
+
+```{r}
+percent_change_2 <- function(y_label){
+  r_form <- paste0("log(", y_label,
+  ") ~ treatment * temp_id * sex * exp_id + (1 | line_id)")
+  m1 <- lmer(r_form, data = wing)
+  m1_emm <- emmeans(m1,
+                    ~ treatment | temp_id * sex * exp_id
+  )
+  m1_pairs <- contrast(m1_emm, method = list("Sel - CN" = c(-1, 1)))
+  m1_pairs_df <- as.data.frame(m1_pairs)
+  m1_pairs_df$percent <- 100 * (exp(m1_pairs_df$estimate) - 1)
+  return(m1_pairs_df)
+}
+
+keep_cols <- c("temp_id","sex","exp_id","percent")
+res <- percent_change_2("area")
+change_dt <- res[, keep_cols]
+colnames(change_dt)[4] <- "area"
+
+res <- percent_change_2("wing_length")
+change_dt$wing_length <- as.data.frame(res)$percent
+
+res <- percent_change_2("aspect_ratio")
+change_dt$aspect_ratio <- as.data.frame(res)$percent
+
+res <- percent_change_2("xbar_hat")
+change_dt$xbar_hat <- as.data.frame(res)$percent
+
+res <- percent_change_2("r2_hat_sq")
+change_dt$r2_hat_sq <- as.data.frame(res)$percent
+
+res <- percent_change_2("q0.1")
+change_dt$q0.1 <- as.data.frame(res)$percent
+
+res <- percent_change_2("q0.2")
+change_dt$q0.2 <- as.data.frame(res)$percent
+
+res <- percent_change_2("q0.3")
+change_dt$q0.3 <- as.data.frame(res)$percent
+
+res <- percent_change_2("prop_prox")
+change_dt$prop_prox <- as.data.frame(res)$percent
+
+change_dt
+clipr::write_clip(change_dt)
+```
+

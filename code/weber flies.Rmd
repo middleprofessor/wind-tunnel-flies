@@ -773,7 +773,8 @@ ggplot(data = free_flight_init[sex == "F"],
 
 ```
 
-
+# Weight
+# Head and Thorax
 # Wingshape analysis
 
 For wing anatomy, see https://flybase.org/reports/FBim0000853?utm_source=chatgpt.com

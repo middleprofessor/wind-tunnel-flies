@@ -1003,8 +1003,6 @@ for(i in 1:length(folder_list)){
   )
 }
 
-wing[, r2_hat_sq2 := r2_hat^2] # see Ray et al 2016
-
 wing[, treatment := ifelse(line_id == "A1" |
                              line_id == "A2",
                            "SEL", "WT") |>
@@ -1401,10 +1399,10 @@ change_dt <- data.table(
 ```{r}
 percent_change_2 <- function(y_label){
   r_form <- paste0("log(", y_label,
-  ") ~ treatment * temp_id * sex * exp_id + (1 | line_id)")
+  ") ~ treatment * temp_id * exp_id * sex + (1 | line_id)")
   m1 <- lmer(r_form, data = wing)
   m1_emm <- emmeans(m1,
-                    ~ treatment | temp_id * sex * exp_id
+                    ~ treatment | temp_id * exp_id * sex
   )
   m1_pairs <- contrast(m1_emm, method = list("Sel - CN" = c(-1, 1)))
   m1_pairs_df <- as.data.frame(m1_pairs)
@@ -1413,12 +1411,16 @@ percent_change_2 <- function(y_label){
 }
 
 keep_cols <- c("temp_id","sex","exp_id","percent")
+
 res <- percent_change_2("area")
 change_dt <- res[, keep_cols]
 colnames(change_dt)[4] <- "area"
 
 res <- percent_change_2("wing_length")
 change_dt$wing_length <- as.data.frame(res)$percent
+
+res <- percent_change_2("mean_chord")
+change_dt$mean_chord <- as.data.frame(res)$percent
 
 res <- percent_change_2("aspect_ratio")
 change_dt$aspect_ratio <- as.data.frame(res)$percent

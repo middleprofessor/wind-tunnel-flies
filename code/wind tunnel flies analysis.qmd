@@ -650,3 +650,179 @@ exp2_sum <- exp2_max_id[, .(wind_max = mean(wind_max),
 setorder(exp2_sum, sex, treatment, line, date)
 ```
 
+To compare to Exp1 (Simons-Walker) results, I am using wind tunnel speed and not the computed speed of the fly. But I will analyze that in a supplement. Jess has 3 measures per fly; since these are at same tunnel speed, I just need to obtain the summary data as the primary data set.
+
+```{r }
+#| label: jess-primary-data
+#| echo: false
+#| warning: false
+#| eval: true
+
+exp2_primary <- exp2[, .(wind_speed = mean(wind_jess)), 
+                     by = .(id, treatment, line, sex, group)]
+```
+
+### Estimate Treatment Effects
+
+```{r }
+#| label: exp2-lmm-random-intercept
+#| echo: false
+#| warning: false
+#| eval: true
+
+exp2_lmm <- lmer(wind_speed ~ treatment * sex + (1 | line), data = exp2_primary)
+coef(summary(exp2_lmm))
+exp2_sigma <- summary(exp2_lmm)$sigma
+
+exp2_emm <- emmeans(exp2_lmm, specs = c("treatment", "sex"))
+
+cn_f <- c(1,0,0,0,0,0)
+wild_f <- c(0,1,0,0,0,0)
+aa_f <- c(0,0,1,0,0,0)
+cn_m <- c(0,0,0,1,0,0)
+wild_m <- c(0,0,0,0,1,0)
+aa_m <- c(0,0,0,0,0,1)
+
+# contrasts of interest - this is all contrasts, just not m v f
+# aa - cn # primary contrast
+# aa - k45 # secondary contrast testing comparison with newer line
+# aa - n60 # secondary contrast testing comparison with newer line
+# cn - k45 # secondary contrast testing loss in cn
+# cn - n60 # secondary contrast testing loss in cn
+# n60 - k45 # n60 is july 2009 and k45 is july 2008
+
+exp2_contrasts <- list(
+  list("F: AA - CN" = aa_f - cn_f),
+  list("F: AA - WT" = aa_f - wild_f),
+  list("F: CN - WT" = cn_f - wild_f),
+  list("M: AA - CN" = aa_m - cn_m),
+  list("M: AA - WT" = aa_m - wild_m),
+  list("M: CN - WT" = cn_m - wild_m)
+)
+
+exp2_pairs <- contrast(exp2_emm,
+                      method = exp2_contrasts,
+                      adjust = "none") |>
+  summary(infer = TRUE) |>
+  data.table()
+exp2_pairs[, effect_std := estimate / sigma]
+# set up order for effects plot
+exp2_pairs[, contrast := factor(contrast,
+                                levels = c("M: CN - WT",
+                                           "M: AA - WT",
+                                           "M: AA - CN",
+                                           "F: CN - WT",
+                                           "F: AA - WT",
+                                           "F: AA - CN"))]
+
+exp2_emm
+exp2_pairs
+
+```
+
+```{r }
+#| label: exp2-conditional-means
+#| echo: false
+#| warning: false
+#| eval: true
+
+# compute conditional means
+newdat <- expand.grid(
+  line = levels(exp2_primary$line),
+  sex = levels(exp2_primary$sex)
+) |>
+  data.table()
+# newdat[, treatment := line]
+# newdat[substr(line,1,2) == "aa", treatment := "aa"]
+# newdat[substr(line,1,2) == "cn", treatment := "cn"]
+newdat[, treatment := substr(line,1,2)]
+newdat[treatment == "K4", treatment := "Wild"]
+newdat[treatment == "N6", treatment := "Wild"]
+newdat[, fit := predict(exp2_lmm, newdata = newdat)]
+
+```
+
+```{r }
+#| label: exp2-conditional-mean-plot
+#| echo: false
+#| warning: false
+#| eval: true
+
+means_plot <- function(plot_sex = "F", title = "Female"){
+  offset <- 0.25
+  x_breaks <- c(1-offset, 1+offset, 2-offset, 2+offset,
+                3-offset, 3+offset)
+  
+  plot_data <- exp2_primary[, .SD, .SDcols = c("treatment", "line", "sex", "wind_speed")]
+  treatment_means <- exp2_emm |> 
+    summary() |>
+    data.table()
+  treatment_means[treatment == "CN", x := 1]
+  treatment_means[treatment == "Wild", x := 2]
+  treatment_means[treatment == "AA", x := 3]
+  plot_data[line == "CN1", x := 1 - offset]
+  plot_data[line == "CN2", x := 1 + offset]
+  plot_data[line == "K45", x := 2 - offset]
+  plot_data[line == "N60", x := 2 + offset]
+  plot_data[line == "AA1", x := 3 - offset]
+  plot_data[line == "AA2", x := 3 + offset]
+  newdat[line == "CN1", x := 1 - offset]
+  newdat[line == "CN2", x := 1 + offset]
+  newdat[line == "K45", x := 2 - offset]
+  newdat[line == "N60", x := 2 + offset]
+  newdat[line == "AA1", x := 3 - offset]
+  newdat[line == "AA2", x := 3 + offset]
+
+  gg <- ggplot(data = plot_data[sex == plot_sex],
+               aes(x = x,
+                   y = wind_speed,
+                   color = treatment)) +
+    
+    # raw data
+    # geom_sina(maxwidth = 0.5,
+    #           color = "gray") +
+    geom_jitter(width = 0.05,
+                height = 0.5,
+                size = 0.2,
+                color = "gray") +
+
+    # line means
+    geom_point(data = newdat[sex == plot_sex],
+               aes(x = x,
+                   y = fit),
+               size = 2) +
+    
+    # treatment means and CI
+    geom_point(data = treatment_means[sex == plot_sex],
+               aes(x = x,
+                   y = emmean),
+               size = 3) +
+    geom_errorbar(data = treatment_means[sex == plot_sex],
+                  aes(x = x,
+                      y = emmean,
+                      ymin = lower.CL,
+                      ymax = upper.CL),
+                  width = 0) +
+    
+    # clean plot
+    ylab("Max Opposing Wind Speed (cm/s)") +
+    scale_color_manual(values = c(pal_okabe_ito[1],
+                                  pal_okabe_ito[3],
+                                  pal_okabe_ito[2])) +
+    scale_x_continuous(breaks = x_breaks,
+                       labels = c("CN\n1", "CN\n2",
+                                  "Wild\nK45", "Wild\nN60",
+                                   "AA\n1", "AA\n2")) +
+    theme_pubr() +
+    theme(legend.position="none",
+          axis.title.x = element_blank()) +
+    coord_cartesian(ylim = c(0, 250),
+                    xlim = c(0.7, 3.3)) +
+    ggtitle(title)
+  return(gg)
+}
+
+gg_f <- means_plot(plot_sex = "F", title = "Female")
+gg_m <- means_plot(plot_sex = "M", title = "Male")
+plot_grid(gg_f, gg_m, ncol = 2)
+```

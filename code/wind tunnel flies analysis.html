@@ -135,8 +135,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </section>
 <section id="selected-lines-have-30-40-higher-upwind-flight-ability-than-control-or-wild-type-lines" class="level1">
 <h1>Selected lines have 30-40% higher upwind flight ability than control or wild type lines</h1>
-<section id="experiment-1" class="level2">
-<h2 class="anchored" data-anchor-id="experiment-1">Experiment 1</h2>
+<section id="experiment-1-simons-walker-data" class="level2">
+<h2 class="anchored" data-anchor-id="experiment-1-simons-walker-data">Experiment 1 (Simons-Walker data)</h2>
 <section id="linear-mixed-model" class="level3">
 <h3 class="anchored" data-anchor-id="linear-mixed-model">Linear mixed model</h3>
 <div class="cell">
@@ -259,6 +259,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </section>
 <section id="supplementary-models-in-supplement" class="level3">
 <h3 class="anchored" data-anchor-id="supplementary-models-in-supplement">Supplementary models (in supplement)</h3>
+<section id="classical-ancova" class="level4">
+<h4 class="anchored" data-anchor-id="classical-ancova">Classical ANCOVA</h4>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>lm_ancova <span class="ot">&lt;-</span> <span class="fu">lm</span>(wind_speed <span class="sc">~</span> treatment <span class="sc">*</span> sex <span class="sc">+</span> room_temp, <span class="at">data =</span> exp1)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
@@ -279,6 +281,9 @@ treatmentAA:sexM   7.766310  6.1944225  1.253758 2.127958e-01</code></pre>
 </div>
 </div>
 </div>
+</section>
+<section id="random-intercept-with-covariate" class="level4">
+<h4 class="anchored" data-anchor-id="random-intercept-with-covariate">Random intercept with covariate</h4>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb4"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>exp1_lmm_2 <span class="ot">&lt;-</span> <span class="fu">lmer</span>(wind_speed <span class="sc">~</span> treatment <span class="sc">*</span> sex <span class="sc">+</span> room_temp <span class="sc">+</span> (<span class="dv">1</span> <span class="sc">|</span> line), <span class="at">data =</span> exp1)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
@@ -377,8 +382,9 @@ treatmentAA:sexM   7.766310  6.1944225  1.253758 2.127958e-01</code></pre>
 
 </div>
 </div>
-<section id="classical-nested-anova-supplement" class="level4">
-<h4 class="anchored" data-anchor-id="classical-nested-anova-supplement">Classical nested ANOVA (supplement)</h4>
+</section>
+<section id="classical-nested-anova" class="level4">
+<h4 class="anchored" data-anchor-id="classical-nested-anova">Classical nested ANOVA</h4>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>exp1_aov <span class="ot">&lt;-</span> <span class="fu">aov</span>(wind_speed <span class="sc">~</span> treatment <span class="sc">*</span> sex <span class="sc">+</span> <span class="fu">Error</span>(line <span class="sc">/</span> sex),</span>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>          <span class="at">data =</span> exp1)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
@@ -405,6 +411,66 @@ Residuals 99  23708   239.5               </code></pre>
 </div>
 </div>
 </section>
+</section>
+</section>
+<section id="experiment-2-wheeler-data" class="level2">
+<h2 class="anchored" data-anchor-id="experiment-2-wheeler-data">Experiment 2 (Wheeler) data</h2>
+<section id="clean-and-import" class="level3">
+<h3 class="anchored" data-anchor-id="clean-and-import">Clean and Import</h3>
+<p>To compare to Exp1 (Simons-Walker) results, I am using wind tunnel speed and not the computed speed of the fly. But I will analyze that in a supplement. Jess has 3 measures per fly; since these are at same tunnel speed, I just need to obtain the summary data as the primary data set.</p>
+</section>
+<section id="estimate-treatment-effects" class="level3">
+<h3 class="anchored" data-anchor-id="estimate-treatment-effects">Estimate Treatment Effects</h3>
+<div class="cell">
+<div class="cell-output cell-output-stdout">
+<pre><code>                    Estimate Std. Error          df   t value     Pr(&gt;|t|)
+(Intercept)         90.29973   6.673737    3.152007 13.530610 6.747727e-04
+treatmentWild       11.42369   9.472730    3.198690  1.205956 3.094040e-01
+treatmentAA         61.85944   9.435469    3.148647  6.556054 6.205628e-03
+sexM               -11.59091   2.155431 2570.307890 -5.377538 8.231327e-08
+treatmentWild:sexM  17.81702   3.237003 2569.362508  5.504172 4.076251e-08
+treatmentAA:sexM    10.61994   3.039859 2569.423302  3.493562 4.846769e-04</code></pre>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code> treatment sex emmean   SE   df lower.CL upper.CL
+ CN        F     90.3 6.67 3.14     69.6    111.0
+ Wild      F    101.7 6.72 3.24     81.2    122.3
+ AA        F    152.2 6.67 3.14    131.5    172.9
+ CN        M     78.7 6.67 3.15     58.0     99.4
+ Wild      M    107.9 6.72 3.23     87.4    128.5
+ AA        M    151.2 6.68 3.15    130.5    171.9
+
+Degrees-of-freedom method: kenward-roger 
+Confidence level used: 0.95 </code></pre>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>     contrast  estimate       SE       df  lower.CL     upper.CL   t.ratio
+       &lt;fctr&gt;     &lt;num&gt;    &lt;num&gt;    &lt;num&gt;     &lt;num&gt;        &lt;num&gt;     &lt;num&gt;
+1: F: AA - CN  61.85944 9.435633 3.141336  32.58108  91.13780221  6.555939
+2: F: AA - WT  50.43575 9.470134 3.187887  21.27793  79.59356322  5.325769
+3: F: CN - WT -11.42369 9.472880 3.191263 -40.57381  17.72642498 -1.205937
+4: M: AA - CN  72.47938 9.442206 3.150362  43.22535 101.73339881  7.676106
+5: M: AA - WT  43.23866 9.471343 3.189398  14.08436  72.39296473  4.565209
+6: M: CN - WT -29.24071 9.468717 3.185970 -58.40335  -0.07807473 -3.088139
+       p.value effect_std
+         &lt;num&gt;      &lt;num&gt;
+1: 0.006251600   4.052834
+2: 0.011063085   3.304390
+3: 0.309582493  -0.748444
+4: 0.003859746   4.748618
+5: 0.017242876   2.832860
+6: 0.049662847  -1.915759</code></pre>
+</div>
+</div>
+<div class="cell">
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="wind-tunnel-flies-analysis_files/figure-html/exp2-conditional-mean-plot-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
 </section>
 </section>
 </section>

@@ -1,0 +1,22 @@
+---
+title: "Twenty years of selection for upwind flight abilty in *Drosophila melanogaster* produces large performance gains but little remodeling of wing shape"
+format: typst
+editor: visual
+---
+
+## Abstract
+
+## Introduction
+
+Natural selection of complex phenotypes can evolve many underlying traits, including behavioral, physiological, morphological
+Which traits respond will reflect evolvability due to genetic variation and performance trade-offs.
+Weber long-term seletion on upwind flight ability is a beautiful system to investigate this. Brief description of selection.
+Selection on upwind flight ability could select on light attraction (phototaxis), inhibition to take-off in a flow, ability to maneuver from take-off orientation into upwind flight orientation, flight speed, flight stability, and resistance to wing folding.
+Here we report the response to selection in upwind flight ability. We then compare underlying phenotypic traits related to this response betwen the two selected lines and either the original control lines or more recently collected lines the represent phenotypes closer to wild-type condition.
+We are especially interested in the response of wing shape. Weber showed that the wing is highly evolvable in the sense that it rapidly responds to selection. Ray et al showed that changes in wing shape have large effects on different aspects of flight performance, especially related to maneuverabilty.
+
+## Methods
+
+## Results
+
+## Discussion

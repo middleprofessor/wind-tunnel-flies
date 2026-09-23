@@ -5,7 +5,7 @@ date: "`r Sys.Date()`"
 output: html_document
 ---
 
-```{r setup, echo=FALSE}
+```{r setup, echo=FALSE, message=FALSE}
 # wrangling packages
 library(data.table) # magical data frames
 library(here) # here makes a project transportable
@@ -79,13 +79,16 @@ wt <- melt(wt_wide,
            value.name = "mafs")
 wt[, line := substr(id,1,3)]
 wt <- na.omit(wt)
-```
 
-```{r plot-historic-wt-data}
+# compute line means (in some generations there were two runs per line)
 line_means <- wt[, .(mafs = mean(mafs)),
                  by = .(gen, line)]
 aa_mean <- line_means[, .(mafs = mean(mafs)),
                  by = .(gen)]
+
+```
+
+```{r plot-historic-wt-data}
 gg <- ggplot(data = wt,
              aes(x = gen,
                  y = mafs,
@@ -119,6 +122,31 @@ gg <- ggplot(data = wt,
 gg
 ```
 
+```{r}
+late150 <- line_means[gen >= 150]
+late150[, gen100 := (gen - 150) / 100]
+
+m_150 <- gls(
+  mafs ~ gen100 + line,
+  data = late150,
+  correlation = corCAR1(form = ~ gen | line),
+  method = "REML"
+)
+summary(m_150)
+intervals(m_150)
+
+late250 <- line_means[gen >= 250]
+late250[, gen100 := (gen - 250) / 100]
+
+m_250 <- gls(
+  mafs ~ gen100 + line,
+  data = late250,
+  correlation = corCAR1(form = ~ gen | line),
+  method = "REML"
+)
+summary(m_250)
+intervals(m_250)
+```
 
 # Burst analysis
 ## Experiment 1 (Simons-Walker)
@@ -137,7 +165,7 @@ exp1 <- read_xlsx(in_path,
 
 exp1[, id := .I]
 exp1[, treatment := factor(treatment, levels = c("CN", "AA"))]
-exp1[, sex := factor(sex, levels = c("M", "F"))]
+exp1[, sex := factor(sex, levels = c("F", "M"))]
 exp1[, line := paste0(treatment, line) |>
        factor(levels = c("CN1", "CN2", "AA1", "AA2"))]
 exp1[, wind_speed := dial_50 * dial_to_speed]
@@ -187,10 +215,10 @@ exp1_sigma <- summary(exp1_lmm)$sigma
 
 exp1_emm <- emmeans(exp1_lmm, specs = c("treatment", "sex"))
 
-cn_m <- c(1,0,0,0)
-aa_m <- c(0,1,0,0)
-cn_f <- c(0,0,1,0)
-aa_f <- c(0,0,0,1)
+cn_f <- c(1,0,0,0)
+aa_f <- c(0,1,0,0)
+cn_m <- c(0,0,1,0)
+aa_m <- c(0,0,0,1)
 exp1_contrast <- list(
   list("F: AA - CN" = aa_f - cn_f),
   list("M: AA - CN" = aa_m - cn_m)
@@ -230,11 +258,11 @@ newdat[, fit := predict(exp1_lmm, newdata = newdat)]
 
 # check with my own math
 coefs <- coef(exp1_lmm)$line
-mm_males <- matrix(c(1,0,0,0,
+mm_females <- matrix(c(1,0,0,0,
                        1,0,0,0,
                        1,1,0,0,
                        1,1,0,0), nrow=4)
-mm_females <- matrix(c(1,0,1,0,
+mm_males <- matrix(c(1,0,1,0,
                        1,0,1,0,
                        1,1,1,1,
                        1,1,1,1), nrow=4)
@@ -340,7 +368,7 @@ gg
 ### Other models
 With room_temp covariate (supplement)
 
-```{r exp1-lmm-random-intercept}
+```{r exp1-room_temp}
 exp1_lmm_2 <- lmer(wind_speed ~ treatment * sex + room_temp + (1 | line), data = exp1)
 coef(summary(exp1_lmm_2))
 sigma <- summary(exp1_lmm_2)$sigma
@@ -358,6 +386,7 @@ exp1_lmm_2_emm
 exp1_lmm_2_pairs
 
 ```
+
 ```{r exp1-classical-nested-anova}
 str(exp1)
 m1 <- aov(wind_speed ~ treatment * sex + Error(line / sex),
@@ -776,10 +805,10 @@ tunnel <- free_flight[experiment == "tunnel"]
 ```
 
 ```{r}
-freq_f <- lm(f ~ treatment * v1, data = tunnel[sex == "F"])
+freq_f <- lm(f ~ treatment * v1, data = free_flight[sex == "F"])
 coef(summary(freq_f))
 
-gg_freq_f <- ggplot(data = tunnel[sex == "F"],
+gg_freq_f <- ggplot(data = free_flight[sex == "F"],
                     aes(x = v1,
                         y = f,
                         color = treatment)) +
@@ -787,10 +816,10 @@ gg_freq_f <- ggplot(data = tunnel[sex == "F"],
   geom_ancova(freq_f) +
   theme_pubr()
 
-freq_m <- lm(f ~ treatment * v1, data = tunnel[sex == "M"])
+freq_m <- lm(f ~ treatment * v1, data = free_flight[sex == "M"])
 coef(summary(freq_m))
 
-gg_freq_m <- ggplot(data = tunnel[sex == "M"],
+gg_freq_m <- ggplot(data = free_flight[sex == "M"],
                     aes(x = v1,
                         y = f,
                         color = treatment)) +
@@ -802,7 +831,7 @@ plot_grid(gg_freq_m, gg_freq_f, ncol = 2)
 ```
 
 
-```{r free-flight-import}
+```{r free-flight-import-2}
 subfolder <- "kinematics/free flight/processed"
 filename <- "init_data.xlsx"
 in_path <- here(data_folder, subfolder, filename)
@@ -838,6 +867,37 @@ ggplot(data = free_flight_init[sex == "F"],
 ```
 
 # Weight
+
+```{r simons-weight}
+# using Simons (exp1) data
+m1 <- lmer(mass ~ treatment * sex + (1 | line), data = exp1)
+# singular
+m1 <- lm(mass ~ treatment * sex + line, data = exp1)
+m1_sigma <- summary(m1)$sigma
+
+exp1_agg <- exp1[, .(mass = mean(mass)), by = .(treatment, sex, line)]
+m1_agg <- lm(mass ~ treatment * sex, data = exp1_agg)
+m1_agg_emm <- emmeans(m1_agg, specs = c("treatment", "sex"))
+cn_f <- c(1,0,0,0)
+aa_f <- c(0,1,0,0)
+cn_m <- c(0,0,1,0)
+aa_m <- c(0,0,0,1)
+exp1_contrast <- list(
+  list("F: AA - CN" = aa_f - cn_f),
+  list("M: AA - CN" = aa_m - cn_m)
+)
+m1_agg_pairs <- contrast(m1_agg_emm,
+                     method = exp1_contrast,
+                  adjust = "none") |>
+  summary(infer = TRUE) |>
+  data.table()
+m1_agg_emm_dt <- summary(m1_agg_emm) |>
+  data.table()
+cn_means <- m1_agg_emm_dt[treatment == "CN", emmean]
+m1_agg_pairs[, estimate_sd := estimate / m1_sigma]
+m1_agg_pairs[, percent := estimate/cn_means*100]
+```
+
 # Head and Thorax
 # Wingshape analysis
 
@@ -956,6 +1016,117 @@ wing_metrics <- function(x, y, hinge = 1, tip = 17) {
     r2         = r2,
     r2_hat     = r2_hat,
     r2_hat_sq  = r2_hat_sq
+  )
+}
+
+
+```
+
+## Wing radial areas vs polygons
+
+```{r radial-area-distribution}
+radial_area_distribution <- function(x, y, hinge = 1, tip = 17,
+                                     q = seq(0, 1, by = 0.05)) {
+
+  ## Translate hinge to origin
+  x0 <- x - x[hinge]
+  y0 <- y - y[hinge]
+
+  ## Rotate hinge -> tip onto x-axis
+  theta <- atan2(y0[tip], x0[tip])
+
+  xr <-  x0 * cos(theta) + y0 * sin(theta)
+  yr <- -x0 * sin(theta) + y0 * cos(theta)
+
+  ## Wing length
+  R <- sqrt(x0[tip]^2 + y0[tip]^2)
+
+  ## Close polygon for sf
+  xy <- cbind(xr, yr)
+  xy <- rbind(xy, xy[1, ])
+
+  wing <- st_polygon(list(xy))
+
+  total_area <- as.numeric(st_area(wing))
+
+  ## Bounds safely beyond wing
+  ymin <- min(yr) - R
+  ymax <- max(yr) + R
+  xmin <- min(xr) - R
+
+  ## For each q, calculate area with x/R <= q
+  cumulative_area <- sapply(q, function(qi) {
+
+    xmax <- qi * R
+
+    box <- st_polygon(list(matrix(
+      c(xmin, ymin,
+        xmax, ymin,
+        xmax, ymax,
+        xmin, ymax,
+        xmin, ymin),
+      ncol = 2,
+      byrow = TRUE
+    )))
+
+    intersection <- suppressWarnings(
+      st_intersection(wing, box)
+    )
+
+    if (length(intersection) == 0) {
+      0
+    } else {
+      as.numeric(st_area(intersection)) / total_area
+    }
+  })
+
+  data.table(
+    q = q,
+    cumulative_area = cumulative_area
+  )
+}
+```
+
+```{r check-daves-regional-area}
+polygon_area <- function(x, y) {
+  
+  # next point around polygon, including last -> first
+  x2 <- c(x[-1], x[1])
+  y2 <- c(y[-1], y[1])
+  
+  abs(sum(x * y2 - x2 * y) / 2)
+}
+
+
+regional_areas <- function(x, y) {
+  
+  # Total wing
+  total <- polygon_area(x, y)
+  
+  # Proximal: 1 -> 2 -> 3 -> 4 -> 5 -> 37 -> 1
+  prox_ind <- c(1:5, 37)
+  proximal <- polygon_area(x[prox_ind], y[prox_ind])
+  
+  # Middle: 5 -> ... -> 12 -> 27 -> ... -> 37 -> 5
+  mid_ind <- c(5:12, 27:37)
+  middle <- polygon_area(x[mid_ind], y[mid_ind])
+  
+  # Distal: 12 -> ... -> 27 -> 12
+  dist_ind <- 12:27
+  distal <- polygon_area(x[dist_ind], y[dist_ind])
+  
+  data.table(
+    area_total = total,
+    area_prox = proximal,
+    area_middle = middle,
+    area_distal = distal,
+    
+    prop_prox = proximal / total,
+    prop_middle = middle / total,
+    prop_distal = distal / total,
+    
+    partition_error =
+      (proximal + middle + distal) - total
   )
 }
 ```
@@ -1165,7 +1336,7 @@ gg
 
 Don't need this because I have the image from Jim
 
-```{r reconstruct-landmarks-on-wing-image}
+```{r reconstruct-landmarks-on-wing-image, echo=FALSE, eval=FALSE}
 
 # run this in console
 # quartz()
@@ -1205,7 +1376,7 @@ pixel <- data.table(
 )
 ```
 
-```{r reconstruct-part-ii}
+```{r reconstruct-part-ii, echo=FALSE, eval=FALSE}
 # registration coordinates
 reg_file <- "wing_image/WXA2FA1_reg.txt"
 reg_path <- here(reg_file)
@@ -1289,114 +1460,6 @@ ggplot() +
 
 
 
-### Checking apparent disconnect between Harmon's polygons and my 2nd moment of area
-
-```{r radial-area-distribution}
-radial_area_distribution <- function(x, y, hinge = 1, tip = 17,
-                                     q = seq(0, 1, by = 0.05)) {
-
-  ## Translate hinge to origin
-  x0 <- x - x[hinge]
-  y0 <- y - y[hinge]
-
-  ## Rotate hinge -> tip onto x-axis
-  theta <- atan2(y0[tip], x0[tip])
-
-  xr <-  x0 * cos(theta) + y0 * sin(theta)
-  yr <- -x0 * sin(theta) + y0 * cos(theta)
-
-  ## Wing length
-  R <- sqrt(x0[tip]^2 + y0[tip]^2)
-
-  ## Close polygon for sf
-  xy <- cbind(xr, yr)
-  xy <- rbind(xy, xy[1, ])
-
-  wing <- st_polygon(list(xy))
-
-  total_area <- as.numeric(st_area(wing))
-
-  ## Bounds safely beyond wing
-  ymin <- min(yr) - R
-  ymax <- max(yr) + R
-  xmin <- min(xr) - R
-
-  ## For each q, calculate area with x/R <= q
-  cumulative_area <- sapply(q, function(qi) {
-
-    xmax <- qi * R
-
-    box <- st_polygon(list(matrix(
-      c(xmin, ymin,
-        xmax, ymin,
-        xmax, ymax,
-        xmin, ymax,
-        xmin, ymin),
-      ncol = 2,
-      byrow = TRUE
-    )))
-
-    intersection <- suppressWarnings(
-      st_intersection(wing, box)
-    )
-
-    if (length(intersection) == 0) {
-      0
-    } else {
-      as.numeric(st_area(intersection)) / total_area
-    }
-  })
-
-  data.table(
-    q = q,
-    cumulative_area = cumulative_area
-  )
-}
-```
-
-```{r check-daves-regional-area}
-polygon_area <- function(x, y) {
-  
-  # next point around polygon, including last -> first
-  x2 <- c(x[-1], x[1])
-  y2 <- c(y[-1], y[1])
-  
-  abs(sum(x * y2 - x2 * y) / 2)
-}
-
-
-regional_areas <- function(x, y) {
-  
-  # Total wing
-  total <- polygon_area(x, y)
-  
-  # Proximal: 1 -> 2 -> 3 -> 4 -> 5 -> 37 -> 1
-  prox_ind <- c(1:5, 37)
-  proximal <- polygon_area(x[prox_ind], y[prox_ind])
-  
-  # Middle: 5 -> ... -> 12 -> 27 -> ... -> 37 -> 5
-  mid_ind <- c(5:12, 27:37)
-  middle <- polygon_area(x[mid_ind], y[mid_ind])
-  
-  # Distal: 12 -> ... -> 27 -> 12
-  dist_ind <- 12:27
-  distal <- polygon_area(x[dist_ind], y[dist_ind])
-  
-  data.table(
-    area_total = total,
-    area_prox = proximal,
-    area_middle = middle,
-    area_distal = distal,
-    
-    prop_prox = proximal / total,
-    prop_middle = middle / total,
-    prop_distal = distal / total,
-    
-    partition_error =
-      (proximal + middle + distal) - total
-  )
-}
-```
 
 ### Effects
 
@@ -1497,6 +1560,6 @@ res <- percent_change_2("r2_hat_sq")
 change_dt$r2_hat_sq <- as.data.frame(res)$percent
 
 change_dt
-clipr::write_clip(change_dt)
+# clipr::write_clip(change_dt)
 ```
 

@@ -1284,6 +1284,7 @@ wing[, treatment := ifelse(line_id == "A1" |
                              line_id == "A2",
                            "SEL", "WT") |>
        factor(levels = c("WT", "SEL"))]
+wing[, temp_id := factor(temp_id)]
 
 wing_lm[, treatment := ifelse(line_id == "A1" |
                                 line_id == "A2",
@@ -1382,35 +1383,60 @@ gg
 ```
 
 ```{r }
-#| label: simple-model
+#| label: lmm-model
 #| echo: false
 #| warning: false
 #| eval: true
 
-area_lmm <- lmer(area ~ treatment * temp_id * sex + (1 | line_id), data = wing)
-m1f_emm <- emmeans(m1f, specs = c("sex", "treatment"))
-m1f_pairs <- contrast(m1f_emm,
-                      method = "revpairwise",
-                      adjust = "none") |>
-  summary(infer = TRUE)
-ggplot_the_model(m1f, m1f_emm, m1f_pairs,
-                 y_label = "Wing Area (mm^2)")
+area_lmm <- lmer(area ~ treatment * temp_id * sex * exp_id +
+                   (1 | line_id),
+                 data = wing)
+area_emm <- emmeans(area_lmm, specs = 
+                     c("sex", "treatment", "temp_id"))
+area_emm <- emmeans(
+  area_lmm,
+  ~ treatment | temp_id * sex
+)
 
-m1f <- lm(aspect_ratio ~ treatment * sex, data = wing)
-m1f_emm <- emmeans(m1f, specs = c("treatment", "sex"))
-m1f_pairs <- contrast(m1f_emm,
-                      method = "revpairwise",
-                      adjust = "none") |>
-  summary(infer = TRUE)
-ggplot_the_model(m1f, m1f_emm, m1f_pairs)
+area_pairs <- contrast(
+  area_emm,
+  method = "revpairwise"
+) |>
+  summary(infer = TRUE) |>
+  data.table()
 
-m1f <- lm(r2_hat_sq ~ treatment * sex, data = wing)
-m1f_emm <- emmeans(m1f, specs = c("treatment", "sex"))
-m1f_pairs <- contrast(m1f_emm,
-                      method = "revpairwise",
-                      adjust = "none") |>
-  summary(infer = TRUE)
-ggplot_the_model(m1f, m1f_emm, m1f_pairs)
+plot_data <- wing[, .SD, 
+                  .SDcols = c("temp_id", "treatment", "exp_id",
+                              "sex", "area")]
+plot_data[, x := as.integer(temp_id) +
+            (as.integer(treatment)-1.5)/5 +
+            rnorm(n=nrow(plot_data), mean = 0, sd = 0.01)]
+# plot_data[, .(x = mean(x)), by = .(temp_id, treatment)]
+
+gg <- ggplot(data = plot_data[sex == "F"],
+             aes(x = x,
+                 y = area,
+                 color = treatment)) +
+  geom_point() +
+  # geom_jitter(
+  #   position = position_jitterdodge(
+  #     jitter.width = 0.15,
+  #     dodge.width = 0.6
+  #   ),
+  #   alpha = 0.5
+  # ) +
+  scale_color_manual(values = pal_okabe_ito) +
+  scale_x_continuous(breaks = 1:3,
+                     labels = c("23°", "26°", "29°")) +
+  ylab("Wing Area (mm^2)") +
+  coord_cartesian(xlim = c(0.5, 3.5)) +
+  theme_pubr() +
+  theme(#legend.position="none",
+        axis.title.x = element_blank()) +
+  NULL
+gg
+
+
 
 ```
 

@@ -1408,7 +1408,6 @@ wing_metric_plot <- function(y_col = "area",
     area_lmm,
     ~ treatment | temp_id * sex
   )
-  
   area_pairs <- contrast(
     area_emm,
     method = "revpairwise"
@@ -1416,27 +1415,38 @@ wing_metric_plot <- function(y_col = "area",
     summary(infer = TRUE) |>
     data.table()
   
-  # compute conditional means
-  line_means <- expand.grid(
-    line_id = levels(wing$line_id),
-    sex = levels(wing$sex),
-    temp_id = levels(wing$temp_id),
-    exp_id = levels(wing$exp_id),
-    treatment = levels(wing$treatment)
-  ) |>
-    data.table()
-  line_means[, del := 0]
-  line_means[line_id %in% c("A1", "A2") & treatment == "WT", del := 1]
-  line_means[line_id %in% c("K4", "L4", "N6") & treatment == "SEL", del := 1]
-  line_means <- newdat[del == 0,]
-  line_means[, fit := predict(area_lmm, newdata = newdat)]
+  # plot treatment : temp : exp means
+  area_emm <- emmeans(
+    area_lmm,
+    ~ treatment | temp_id * sex * exp_id
+  )
+  
+
+  
+  # compute exp_id : line means means
+  line_means <- wing[, .(fit = mean(get(y_col))),
+                     by = .(treatment, temp_id, exp_id,
+                            line_id, sex)]
+  # line_means <- expand.grid(
+  #   line_id = levels(wing$line_id),
+  #   sex = levels(wing$sex),
+  #   temp_id = levels(wing$temp_id),
+  #   exp_id = levels(wing$exp_id),
+  #   treatment = levels(wing$treatment)
+  # ) |>
+  #   data.table()
+  # line_means[, del := 0]
+  # line_means[line_id %in% c("A1", "A2") & treatment == "WT", del := 1]
+  # line_means[line_id %in% c("K4", "L4", "N6") & treatment == "SEL", del := 1]
+  # line_means <- newdat[del == 0,]
+  # line_means[, fit := predict(area_lmm, newdata = newdat)]
   line_means[, x_temp_treat := as.integer(temp_id) +
                (as.integer(treatment)-1.5)/2.5]
   line_means[treatment == "WT", x_temp_line_treat := x_temp_treat +
                (as.integer(line_id)-2)/10]
   line_means[treatment == "SEL", x_temp_line_treat := x_temp_treat +
                (as.integer(line_id)-4.5)/10]
-  
+
   # raw data to plot
   plot_data <- wing[, .SD, 
                     .SDcols = c("temp_id", "treatment", "exp_id",
@@ -1475,20 +1485,22 @@ wing_metric_plot <- function(y_col = "area",
     # treatment : temp means
     geom_point(data = plot_emm[sex == sex_i],
                aes(x = x,
-                   y = emmean),
+                   y = emmean,
+                   shape = exp_id),
                size = 3,
                color = "black") +
     geom_point(data = plot_emm[sex == sex_i],
                aes(x = x,
                    y = emmean,
-                   color = treatment),
+                   color = treatment,
+                   shape = exp_id),
                size = 2) +
-    geom_errorbar(data = plot_emm[sex == sex_i],
-                  aes(x = x,
-                      y = emmean,
-                      ymin = lower.CL,
-                      ymax = upper.CL,
-                      color = treatment)) +
+    # geom_errorbar(data = plot_emm[sex == sex_i],
+    #               aes(x = x,
+    #                   y = emmean,
+    #                   ymin = lower.CL,
+    #                   ymax = upper.CL,
+    #                   color = treatment)) +
     
     scale_color_manual(values = pal_okabe_ito) +
     scale_x_continuous(breaks = 1:3,
@@ -1520,7 +1532,7 @@ gg_WL_m <- wing_metric_plot(y_col = "wing_length", sex_i = "M") +
   ylab("Wing Length (mm)")
 gg_WL_f
 gg_WL_m
-gg
+
 ```
 
 ```{r}

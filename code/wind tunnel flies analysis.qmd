@@ -1177,7 +1177,8 @@ regional_areas <- function(x, y) {
 
 list_in <- "data/wing shape/wing_files_list.txt"
 list_path <- here(list_in)
-folder_list <- fread(list_path, sep = "\t")[[1]]
+folder_list <- fread(list_path, sep = "\t",
+                     header=FALSE)[[1]]
 
 aero_labels <- c("area", "wing_length","mean_chord", "aspect_ratio", "xbar", "ybar", "xbar_hat", "Ixx", "Iyy", "Ixy", "r2", "r2_hat", "r2_hat_sq")
 radii <- c(.1, 0.2, 0.3)
@@ -1221,7 +1222,8 @@ for(i in 1:length(folder_list)){
     
     valid[j] <- TRUE
     
-    fig_lm <- fread(files_long[j], nrows = 37)
+    fig_lm <- fread(files_long[j], nrows = 37,
+                    header = FALSE)
     fig_lm[, V2 := -V2]
     
     # save lm to a matrix for the all fly_id in folder
@@ -1285,6 +1287,12 @@ wing[, treatment := ifelse(line_id == "A1" |
                            "SEL", "WT") |>
        factor(levels = c("WT", "SEL"))]
 wing[, temp_id := factor(temp_id)]
+wing[, line_id := factor(line_id,
+                         levels = c("K4","L4","N6","A1","A2"))]
+wing[, exp_id := factor(exp_id,
+                         levels = c("A","B"))]
+wing[, sex := factor(sex,
+                         levels = c("F","M"))]
 
 wing_lm[, treatment := ifelse(line_id == "A1" |
                                 line_id == "A2",
@@ -1388,56 +1396,140 @@ gg
 #| warning: false
 #| eval: true
 
-area_lmm <- lmer(area ~ treatment * temp_id * sex * exp_id +
-                   (1 | line_id),
-                 data = wing)
-area_emm <- emmeans(area_lmm, specs = 
-                     c("sex", "treatment", "temp_id"))
-area_emm <- emmeans(
-  area_lmm,
-  ~ treatment | temp_id * sex
-)
+# lmm
+wing_metric_plot <- function(y_col = "area",
+                             sex_i = "F"){
+  r_form <- paste(y_col,
+                  "~ treatment * temp_id * sex * exp_id +",
+                  "(1 | line_id)") |>
+    as.formula()
+  area_lmm <- lmer(r_form, data = wing)
+  area_emm <- emmeans(
+    area_lmm,
+    ~ treatment | temp_id * sex
+  )
+  
+  area_pairs <- contrast(
+    area_emm,
+    method = "revpairwise"
+  ) |>
+    summary(infer = TRUE) |>
+    data.table()
+  
+  # compute conditional means
+  line_means <- expand.grid(
+    line_id = levels(wing$line_id),
+    sex = levels(wing$sex),
+    temp_id = levels(wing$temp_id),
+    exp_id = levels(wing$exp_id),
+    treatment = levels(wing$treatment)
+  ) |>
+    data.table()
+  line_means[, del := 0]
+  line_means[line_id %in% c("A1", "A2") & treatment == "WT", del := 1]
+  line_means[line_id %in% c("K4", "L4", "N6") & treatment == "SEL", del := 1]
+  line_means <- newdat[del == 0,]
+  line_means[, fit := predict(area_lmm, newdata = newdat)]
+  line_means[, x_temp_treat := as.integer(temp_id) +
+               (as.integer(treatment)-1.5)/2.5]
+  line_means[treatment == "WT", x_temp_line_treat := x_temp_treat +
+               (as.integer(line_id)-2)/10]
+  line_means[treatment == "SEL", x_temp_line_treat := x_temp_treat +
+               (as.integer(line_id)-4.5)/10]
+  
+  # raw data to plot
+  plot_data <- wing[, .SD, 
+                    .SDcols = c("temp_id", "treatment", "exp_id",
+                                "line_id","sex", y_col)]
+  plot_data[, x_temp_treat := as.integer(temp_id) +
+              (as.integer(treatment)-1.5)/2.5 +
+              rnorm(n=nrow(plot_data), mean = 0, sd = 0.01)]
+  plot_data[treatment == "WT", x_temp_line_treat := x_temp_treat +
+              (as.integer(line_id)-2)/10]
+  plot_data[treatment == "SEL", x_temp_line_treat := x_temp_treat +
+              (as.integer(line_id)-4.5)/10]
+  # plot_data[, .(x = mean(x)), by = .(temp_id, treatment)]
+  
+  # emmeans to plot
+  plot_emm <- area_emm |>
+    summary() |>
+    data.table()
+  plot_emm[, x := as.integer(temp_id) +
+             (as.integer(treatment)-1.5)/20]
+  
+  gg <- ggplot(data = plot_data[sex == sex_i],
+               aes(x = x_temp_line_treat,
+                   y = get(y_col),
+                   color = treatment)) +
+    # show the data
+    geom_point() +
+    
+    # line means
+    geom_point(data = line_means[sex == sex_i],
+               aes(x = x_temp_line_treat,
+                   y = fit,
+                   shape = exp_id),
+               size = 2,
+               color = "black") +
+    
+    # treatment : temp means
+    geom_point(data = plot_emm[sex == sex_i],
+               aes(x = x,
+                   y = emmean),
+               size = 3,
+               color = "black") +
+    geom_point(data = plot_emm[sex == sex_i],
+               aes(x = x,
+                   y = emmean,
+                   color = treatment),
+               size = 2) +
+    geom_errorbar(data = plot_emm[sex == sex_i],
+                  aes(x = x,
+                      y = emmean,
+                      ymin = lower.CL,
+                      ymax = upper.CL,
+                      color = treatment)) +
+    
+    scale_color_manual(values = pal_okabe_ito) +
+    scale_x_continuous(breaks = 1:3,
+                       labels = c("23°", "26°", "29°")) +
+    coord_cartesian(xlim = c(0.5, 3.5)) +
+    theme_pubr() +
+    theme(#legend.position="none",
+      axis.title.x = element_blank()) +
+    NULL
+  return(gg)
+  
+}
 
-area_pairs <- contrast(
-  area_emm,
-  method = "revpairwise"
-) |>
-  summary(infer = TRUE) |>
-  data.table()
-
-plot_data <- wing[, .SD, 
-                  .SDcols = c("temp_id", "treatment", "exp_id",
-                              "sex", "area")]
-plot_data[, x := as.integer(temp_id) +
-            (as.integer(treatment)-1.5)/5 +
-            rnorm(n=nrow(plot_data), mean = 0, sd = 0.01)]
-# plot_data[, .(x = mean(x)), by = .(temp_id, treatment)]
-
-gg <- ggplot(data = plot_data[sex == "F"],
-             aes(x = x,
-                 y = area,
-                 color = treatment)) +
-  geom_point() +
-  # geom_jitter(
-  #   position = position_jitterdodge(
-  #     jitter.width = 0.15,
-  #     dodge.width = 0.6
-  #   ),
-  #   alpha = 0.5
-  # ) +
-  scale_color_manual(values = pal_okabe_ito) +
-  scale_x_continuous(breaks = 1:3,
-                     labels = c("23°", "26°", "29°")) +
-  ylab("Wing Area (mm^2)") +
-  coord_cartesian(xlim = c(0.5, 3.5)) +
-  theme_pubr() +
-  theme(#legend.position="none",
-        axis.title.x = element_blank()) +
-  NULL
+gg_area_f <- wing_metric_plot(y_col = "area", sex_i = "F") +
+  ylab(expression(paste("Wing Area (", mm^2, ")")))
+gg_area_m <- wing_metric_plot(y_col = "area", sex_i = "M") +
+  ylab(expression(paste("Wing Area (", mm^2, ")")))
+gg_area_f
+gg_area_m
+gg_AR_f <- wing_metric_plot(y_col = "aspect_ratio", sex_i = "F") +
+  ylab("Aspect Ratio")
+gg_AR_m <- wing_metric_plot(y_col = "aspect_ratio", sex_i = "M") +
+  ylab("Aspect Ratio")
+gg_AR_f
+gg_AR_m
+gg_WL_f <- wing_metric_plot(y_col = "wing_length", sex_i = "F") +
+  ylab("Wing Length (mm)")
+gg_WL_m <- wing_metric_plot(y_col = "wing_length", sex_i = "M") +
+  ylab("Wing Length (mm)")
+gg_WL_f
+gg_WL_m
 gg
+```
 
-
-
+```{r}
+#| label: check-outliers
+#| echo: false
+#| warning: false
+#| eval: false
+wing[sex == "F" & wing_length < 2, file]
+# "WXN6FB9pp" is a crazy short wing
 ```
 
 ```{r}

@@ -1526,12 +1526,17 @@ gg_AR_m <- wing_metric_plot(y_col = "aspect_ratio", sex_i = "M") +
   ylab("Aspect Ratio")
 gg_AR_f
 gg_AR_m
-gg_WL_f <- wing_metric_plot(y_col = "wing_length", sex_i = "F") +
-  ylab("Wing Length (mm)")
-gg_WL_m <- wing_metric_plot(y_col = "wing_length", sex_i = "M") +
-  ylab("Wing Length (mm)")
+gg_WL_f <- wing_metric_plot(y_col = "wing_length", sex_i = "F") + ylab("Wing Length (mm)")
+gg_WL_m <- wing_metric_plot(y_col = "wing_length", sex_i = "M") + ylab("Wing Length (mm)")
 gg_WL_f
 gg_WL_m
+gg_r2_f <- wing_metric_plot(y_col = "r2_hat_sq", sex_i = "F") +
+  ylab(expression(paste("R2^2")))
+gg_r2_m <- wing_metric_plot(y_col = "r2_hat_sq", sex_i = "M") +
+  ylab(expression(paste("R2^2")))
+gg_r2_f
+gg_r2_m
+
 
 ```
 

@@ -1404,24 +1404,30 @@ wing_metric_plot <- function(y_col = "area",
                   "(1 | line_id)") |>
     as.formula()
   area_lmm <- lmer(r_form, data = wing)
-  area_emm <- emmeans(
+  sigma <- summary(area_lmm)$sigma
+  # emm for statistics
+  area_emm_pairs <- emmeans(
     area_lmm,
     ~ treatment | temp_id * sex
   )
+  WT_means <- summary(area_emm_pairs)[summary(area_emm_pairs)$treatment == "WT", "emmean"]
   area_pairs <- contrast(
-    area_emm,
+    area_emm_pairs,
     method = "revpairwise"
   ) |>
     summary(infer = TRUE) |>
     data.table()
+  area_pairs[, d_perc := estimate / WT_means * 100]
+  area_pairs[, d_std := estimate / sigma]
+  area_pairs[, label := sprintf("\u0394 = %+.3f\n%+.1f%%\n%+.2f SD",
+                              estimate, d_perc, d_std)]
+  area_pairs[, x := as.integer(temp_id)]
   
   # plot treatment : temp : exp means
   area_emm <- emmeans(
     area_lmm,
     ~ treatment | temp_id * sex * exp_id
   )
-  
-
   
   # compute exp_id : line means means
   line_means <- wing[, .(fit = mean(get(y_col))),
@@ -1467,6 +1473,13 @@ wing_metric_plot <- function(y_col = "area",
   plot_emm[, x := as.integer(temp_id) +
              (as.integer(treatment)-1.5)/20]
   
+  # y positions for annotation states
+  max_y <- max(plot_data[sex == sex_i, get(y_col)])
+  min_y <- min(plot_data[sex == sex_i, get(y_col)])
+  add_y <- (max_y - min_y) * .05
+  
+  
+  # plot it
   gg <- ggplot(data = plot_data[sex == sex_i],
                aes(x = x_temp_line_treat,
                    y = get(y_col),
@@ -1502,12 +1515,20 @@ wing_metric_plot <- function(y_col = "area",
     #                   ymax = upper.CL,
     #                   color = treatment)) +
     
+    # annotation stats
+    geom_text(
+      data = area_pairs[sex == sex_i,],
+      aes(x = x, y = max_y + 3*add_y, label = label),
+      inherit.aes = FALSE
+    ) + 
+    
     scale_color_manual(values = pal_okabe_ito) +
     scale_x_continuous(breaks = 1:3,
                        labels = c("23°", "26°", "29°")) +
-    coord_cartesian(xlim = c(0.5, 3.5)) +
+    coord_cartesian(xlim = c(0.5, 3.5),
+                    ylim = c(min_y - add_y, max_y + 4*add_y)) +
     theme_pubr() +
-    theme(#legend.position="none",
+    theme(legend.position="none",
       axis.title.x = element_blank()) +
     NULL
   return(gg)
@@ -1518,26 +1539,45 @@ gg_area_f <- wing_metric_plot(y_col = "area", sex_i = "F") +
   ylab(expression(paste("Wing Area (", mm^2, ")")))
 gg_area_m <- wing_metric_plot(y_col = "area", sex_i = "M") +
   ylab(expression(paste("Wing Area (", mm^2, ")")))
-gg_area_f
-gg_area_m
+gg_WL_f <- wing_metric_plot(y_col = "wing_length", sex_i = "F") + ylab("Wing Length (mm)")
+gg_WL_m <- wing_metric_plot(y_col = "wing_length", sex_i = "M") + ylab("Wing Length (mm)")
+gg_WC_f <- wing_metric_plot(y_col = "mean_chord", sex_i = "F") + ylab("Mean Chord (mm)")
+gg_WC_m <- wing_metric_plot(y_col = "mean_chord", sex_i = "M") + ylab("Mean Chord (mm)")
 gg_AR_f <- wing_metric_plot(y_col = "aspect_ratio", sex_i = "F") +
   ylab("Aspect Ratio")
 gg_AR_m <- wing_metric_plot(y_col = "aspect_ratio", sex_i = "M") +
   ylab("Aspect Ratio")
-gg_AR_f
-gg_AR_m
-gg_WL_f <- wing_metric_plot(y_col = "wing_length", sex_i = "F") + ylab("Wing Length (mm)")
-gg_WL_m <- wing_metric_plot(y_col = "wing_length", sex_i = "M") + ylab("Wing Length (mm)")
-gg_WL_f
-gg_WL_m
+gg_r_f <- wing_metric_plot(y_col = "xbar_hat", sex_i = "F") +
+  ylab(expression(bar(x)/R))
+gg_r_m <- wing_metric_plot(y_col = "xbar_hat", sex_i = "M") +
+  ylab(expression(bar(x)/R))
 gg_r2_f <- wing_metric_plot(y_col = "r2_hat_sq", sex_i = "F") +
-  ylab(expression(paste("R2^2")))
+  ylab(expression(hat(r)[2]^2))
 gg_r2_m <- wing_metric_plot(y_col = "r2_hat_sq", sex_i = "M") +
-  ylab(expression(paste("R2^2")))
-gg_r2_f
-gg_r2_m
+  ylab(expression(hat(r)[2]^2))
 
+gg_f <- plot_grid(gg_area_f,gg_WL_f,gg_WC_f,gg_AR_f,gg_r_f,gg_r2_f,
+                  nrow = 3)
+ggsave(
+  "wing_metrics_f.png",
+  gg_f,
+  width = 8,
+  height = 12,
+  dpi = 300
+)
+gg_f
 
+gg_m <- plot_grid(gg_area_m,gg_WL_m,gg_WC_m,gg_AR_m,gg_r_m,gg_r2_m,
+                  nrow = 3)
+ggsave(
+  "wing_metrics_m.png",
+  gg_m,
+  width = 8,
+  height = 12,
+  dpi = 300
+)
+
+gg_m
 ```
 
 ```{r}
@@ -1550,6 +1590,11 @@ wing[sex == "F" & wing_length < 2, file]
 ```
 
 ```{r}
+#| label: percent-change-1
+#| echo: false
+#| warning: false
+#| eval: false
+
 percent_change <- function(y_label){
   r_form <- paste0("log(", y_label,
   ") ~ treatment * temp_id * sex * exp_id + (1 | line_id)")
@@ -1584,6 +1629,10 @@ change_dt <- data.table(
 ```
 
 ```{r}
+#| label: percent-change-2
+#| echo: false
+#| warning: false
+#| eval: false
 percent_change_2 <- function(y_label){
   r_form <- paste0("log(", y_label,
   ") ~ treatment * temp_id * exp_id * sex + (1 | line_id)")
@@ -1618,6 +1667,8 @@ change_dt$xbar_hat <- as.data.frame(res)$percent
 res <- percent_change_2("r2_hat_sq")
 change_dt$r2_hat_sq <- as.data.frame(res)$percent
 
-change_dt
+change_dt |>
+  kable(digits = c(1)) |>
+  kable_styling()
 # clipr::write_clip(change_dt)
 ```

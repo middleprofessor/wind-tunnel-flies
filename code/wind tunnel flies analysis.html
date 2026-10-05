@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Jeffrey Walker">
-<meta name="dcterms.date" content="2026-09-23">
+<meta name="dcterms.date" content="2026-10-03">
 
 <title>Wind Tunnel Flies Analysis</title>
 <style>
@@ -100,7 +100,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">September 23, 2026</p>
+      <p class="date">October 3, 2026</p>
     </div>
   </div>
   
@@ -415,10 +415,7 @@ Residuals 99  23708   239.5               </code></pre>
 </section>
 <section id="experiment-2-wheeler-data" class="level2">
 <h2 class="anchored" data-anchor-id="experiment-2-wheeler-data">Experiment 2 (Wheeler) data</h2>
-<section id="clean-and-import" class="level3">
-<h3 class="anchored" data-anchor-id="clean-and-import">Clean and Import</h3>
 <p>To compare to Exp1 (Simons-Walker) results, I am using wind tunnel speed and not the computed speed of the fly. But I will analyze that in a supplement. Jess has 3 measures per fly; since these are at same tunnel speed, I just need to obtain the summary data as the primary data set.</p>
-</section>
 <section id="estimate-treatment-effects" class="level3">
 <h3 class="anchored" data-anchor-id="estimate-treatment-effects">Estimate Treatment Effects</h3>
 <div class="cell">
@@ -471,7 +468,96 @@ Confidence level used: 0.95 </code></pre>
 </div>
 </div>
 </div>
+<div class="cell">
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="wind-tunnel-flies-analysis_files/figure-html/exp2-conditional-mean-plot-boxplot-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
 </section>
+</section>
+<section id="the-combined-plot-suggests-that-experiment-2-collected-substantial-submaximal-data" class="level2">
+<h2 class="anchored" data-anchor-id="the-combined-plot-suggests-that-experiment-2-collected-substantial-submaximal-data">The combined plot suggests that Experiment 2 collected substantial submaximal data</h2>
+<div class="cell">
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="wind-tunnel-flies-analysis_files/figure-html/burst-combined-plot-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="wind-tunnel-flies-analysis_files/figure-html/burst-combined-plot-2.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="head-and-thorax" class="level1">
+<h1>Head and Thorax</h1>
+</section>
+<section id="evolution-of-wing-size-and-shape-in-selected-lines-is-small-about-1-difference-at-least-relative-to-flight-performance-and-body-size" class="level1">
+<h1>Evolution of wing size and shape in selected lines is small (about 1% difference), at least relative to flight performance and body size</h1>
+<p>For wing anatomy, see https://flybase.org/reports/FBim0000853?utm_source=chatgpt.com</p>
+<p>and especially https://pmc.ncbi.nlm.nih.gov/articles/PMC11457947/?utm_source=chatgpt.com</p>
+<div class="cell">
+<div class="cell-output cell-output-stdout">
+<pre><code>WZA1MA16pp.txt : 38 landmarks
+WZA1MB19pp.txt : 36 landmarks
+WYA2FA3pp.txt : 36 landmarks
+WZA2MA15pp.txt : 36 landmarks
+WXK4FA14pp.txt : 38 landmarks
+WYK4FB16pp.txt : 38 landmarks
+WYK4MA3pp.txt : 38 landmarks
+WYN6FA9Rpp.txt : 36 landmarks
+WXN6MA10pp.txt : 38 landmarks</code></pre>
+</div>
+</div>
+<section id="superimposed-mean-wing-shapes-show-that-selected-flies-have-more-distal-wing" class="level2">
+<h2 class="anchored" data-anchor-id="superimposed-mean-wing-shapes-show-that-selected-flies-have-more-distal-wing">Superimposed mean wing shapes show that Selected flies have more distal wing</h2>
+<div class="cell">
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="wind-tunnel-flies-analysis_files/figure-html/plot-superimposed-wings-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="wind-tunnel-flies-analysis_files/figure-html/plot-superimposed-wings-by-treatment-combi-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="biomechanically-relevant-wing-metrics-show-small-1-changes-in-wing-size-and-shape" class="level2">
+<h2 class="anchored" data-anchor-id="biomechanically-relevant-wing-metrics-show-small-1-changes-in-wing-size-and-shape">Biomechanically relevant wing metrics show small (1%) changes in wing size and shape</h2>
+<div class="cell">
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="wind-tunnel-flies-analysis_files/figure-html/lmm-model-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="wind-tunnel-flies-analysis_files/figure-html/lmm-model-2.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
 </section>
 </section>
 

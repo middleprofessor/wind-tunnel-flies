@@ -73,7 +73,7 @@ in_path <- here(data_folder, subfolder, filename)
 
 wt_wide <- read_xlsx(in_path,
                 sheet = "Sheet1",
-                range = "A1:E443") |>
+                range = "A1:E505") |>
 #  clean_names() |>
   data.table()
 wt_wide <- wt_wide[gen != ""]
@@ -924,7 +924,7 @@ gg_m
 ```
 
 # Head and Thorax
-# Wingshape analysis
+# Evolution of wing size and shape in selected lines is small (about 1% difference), at least relative to flight performance and body size
 
 For wing anatomy, see https://flybase.org/reports/FBim0000853?utm_source=chatgpt.com
 
@@ -1318,11 +1318,43 @@ wing_lm[, treatment := ifelse(line_id == "A1" |
                      expand.grid(c("x","y"), keep_cols))
   lm_mat <- wing_lm[, .SD, .SDcols = lm_cols] |>
     as.matrix()
+  # get tpr_size as wing span (chord 1 - 17)
+  tpr_size <- sqrt((lm_mat[, "x17"] - lm_mat[, "x1"])^2 +
+    (lm_mat[, "y17"] - lm_mat[, "y1"])^2)
+  # superimpose using TPR
   lm_array <- matrix_2_array(lm_mat)
   lm_tpr <- tpr(lm_array, 1, 17)
 
+  # TPR
   lm_dt_tpr <- array_2_matrix(lm_tpr) |>
     data.table()
+  lm_cols.tpr <- paste0(lm_cols, ".tpr")
+  colnames(lm_dt_tpr) <- lm_cols.tpr
+  wing_tpr <- cbind(wing_lm, lm_dt_tpr)
+  wing_tpr[, "tpr_size" := tpr_size]
+  
+  lm_means <- wing_tpr[, lapply(.SD, mean),
+                         by = .(treatment, sex),
+                         .SDcols = c(lm_cols.tpr)]
+  lm_means_f <- lm_means[sex == "F", .SD, .SDcols = lm_cols.tpr] |>
+    as.matrix()
+  lm_means_f_array <- matrix_2_array(lm_means_f)
+  gg_f <- plot_2shapes(lm_means_f_array, 
+                     color_col = rep(c("SEL", "WT"), each = p))
+  gg_f
+  lm_means_m <- lm_means[sex == "M", .SD, .SDcols = lm_cols.tpr] |>
+    as.matrix()
+  lm_means_m_array <- matrix_2_array(lm_means_m)
+  gg_m <- plot_2shapes(lm_means_m_array, 
+                     color_col = rep(c("SEL", "WT"), each = p))
+  gg_m
+
+  
+  # TPR with size back in
+  lm_means_size <- wing_tpr[, .(tpr_size = mean(tpr_size)),
+                            by = .(treatment, sex)]
+  
+  
   lm_cols.tpr <- paste0(lm_cols, ".tpr")
   colnames(lm_dt_tpr) <- lm_cols.tpr
   wing_tpr <- cbind(wing_lm, lm_dt_tpr)
@@ -1336,8 +1368,6 @@ wing_lm[, treatment := ifelse(line_id == "A1" |
   gg <- plot_2shapes(lm_tpr, 
                      color_col = rep(c("SEL", "WT"), each = p))
   gg
-  
-
 ```
 
 ```{r }
@@ -1389,6 +1419,8 @@ ggsave(
 
 gg
 ```
+
+## Biomechanically relevant wing metrics show small (1%) changes in wing size and shape
 
 ```{r }
 #| label: lmm-model

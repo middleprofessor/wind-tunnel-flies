@@ -926,7 +926,7 @@ gg_m
 # Body Weight
 
 ```{r}
-#| label: weber-weights
+#| label: fly-weights
 #| echo: false
 #| warning: false
 #| eval: true
@@ -1001,6 +1001,14 @@ d2013 <- read_weights(file_path,
                       n_flies = 20,
                       del_col = "MONTH-YEAR")
 
+in_file <- "weights/LIVE HYDRATED BODY WEIGHTS 2016/body weights 2016 gen 692 walker reformat.xlsx"
+file_path <- here(data_folder, in_file)
+d2016 <- read_weights(file_path,
+                      sheet_i = "Sheet1",
+                      range_i = "A1:G9",
+                      generation_i = 692,
+                      n_flies = 20)
+
 # combine
 # exp1_weight = simons/walker weights from spring summer 2004, approximately gen 384 (but over several gens)
 exp1_cols <- c("treatment", "line", "sex", "mass")
@@ -1010,41 +1018,65 @@ exp1_weight[, generation := 384]
 exp1_weight[treatment == "AA", treatment := "SEL"]
 keep_cols <- c("generation", "treatment", "line", "sex", "fly_weight")
 weight <- rbind(d1995[, .SD, .SDcols = keep_cols],
-                 d2007[, .SD, .SDcols = keep_cols],
-                 d2009[, .SD, .SDcols = keep_cols],
-                 d2011[, .SD, .SDcols = keep_cols],
-                 d2013[, .SD, .SDcols = keep_cols],
-                 exp1_weight[, .SD, .SDcols = keep_cols])
+                d2007[, .SD, .SDcols = keep_cols],
+                d2009[, .SD, .SDcols = keep_cols],
+                d2011[, .SD, .SDcols = keep_cols],
+                d2013[, .SD, .SDcols = keep_cols],
+                d2016[, .SD, .SDcols = keep_cols],
+                exp1_weight[, .SD, .SDcols = keep_cols])
+weight <- weight[line != "AL45"] #
+weight[line %in% c("K4", "N6", "AL"), treatment := "WT"]
+weight[, treatment := factor(treatment,
+                             levels = c("SEL",
+                                        "CN", "WT"))]
+
 
 gg_f <- ggplot(data = weight[sex == "F"],
              aes(x = generation,
                  y = fly_weight,
                  color = treatment)) +
   geom_point() +
+  ylab("Weight (mg)") +
+  xlab("Generation") +
+  ggtitle("Females") +
+  scale_color_manual(values = pal_okabe_ito) +
   theme_pubr()
+
 gg_m <- ggplot(data = weight[sex == "M"],
              aes(x = generation,
                  y = fly_weight,
                  color = treatment)) +
   geom_point() +
+  ylab("Weight (mg)") +
+  xlab("Generation") +
+  ggtitle("Males") +
+  scale_color_manual(values = pal_okabe_ito) +
   theme_pubr()
 plot_grid(gg_f, gg_m)
 
 weight_means <- weight[, .(fly_weight = mean(fly_weight,
                                              na.rm = TRUE)),
-                         by = .(generation, sex, treatment)]
+                         by = .(generation, sex, line, treatment)]
 
 gg_f <- ggplot(data = weight_means[sex == "F"],
              aes(x = generation,
                  y = fly_weight,
                  color = treatment)) +
   geom_point() +
+  ylab("Weight (mg)") +
+  xlab("Generation") +
+  ggtitle("Females") +
+  scale_color_manual(values = pal_okabe_ito) +
   theme_pubr()
 gg_m <- ggplot(data = weight_means[sex == "M"],
              aes(x = generation,
                  y = fly_weight,
                  color = treatment)) +
   geom_point() +
+  ylab("Weight (mg)") +
+  xlab("Generation") +
+  ggtitle("Males") +
+  scale_color_manual(values = pal_okabe_ito) +
   theme_pubr()
 plot_grid(gg_f, gg_m)
 ```

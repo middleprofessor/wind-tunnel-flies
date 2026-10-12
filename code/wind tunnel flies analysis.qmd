@@ -923,6 +923,169 @@ gg_m <- combined_plot(sex = "M", title = "Male")
 gg_m
 ```
 
+# Body Weight
+
+```{r}
+#| label: weber-weights
+#| echo: false
+#| warning: false
+#| eval: true
+
+in_file <- "weights/AA-LIVE HYDRATED BODY WEIGHT DATA-1995-2016/weights 1995 (walker reformat).xlsx"
+file_path <- here(data_folder, in_file)
+d1995 <- read_excel(file_path,
+                    range = "A1:K29") |>
+  data.table()
+d1995[, fly_weight := vial_weight / n_flies * 1000]
+
+read_weights <- function(file_path,
+                         sheet_i,
+                         range_i,
+                         generation_i,
+                         n_flies = 20,
+                         del_col = NA){
+  
+  dt_wide <- read_excel(file_path,
+                        sheet = sheet_i,
+                        range = range_i) |>
+    data.table()
+  if(!is.na(del_col)){
+    dt_wide[, c(del_col) := NULL]
+  }
+  colnames(dt_wide)[1] <- "set"
+  lines <- colnames(dt_wide)[-1]
+  dt_long <- melt(dt_wide,
+                  id.vars = "set",
+                  measure.vars = lines,
+                  variable.name = "line_sex",
+                  value.name = "vial_weight")
+  dt_long[, fly_weight := vial_weight/n_flies * 1000] # 20 flies per vial
+  dt_long[, c("line", "sex") := tstrsplit(line_sex, "-")]
+  dt_long[, treatment := substr(line, 1, 2)]
+  dt_long[treatment == "AA", treatment := "SEL"]
+  dt_long[, generation := generation_i]
+  return(dt_long)
+  
+}
+
+in_file <- "weights/AA-LIVE HYDRATED BODY WEIGHT DATA-1995-2016/BODY WEIGHTS-2007.xlsx"
+file_path <- here(data_folder, in_file)
+d2007 <- read_weights(file_path,
+                      sheet_i = "Sheet3",
+                      range_i = "A1:i16",
+                      generation_i = 465,
+                      n_flies = 20)
+
+in_file <- "weights/AA-LIVE HYDRATED BODY WEIGHT DATA-1995-2016/BODY WEIGHTS-2009-Kens 15 Sets.xlsx"
+file_path <- here(data_folder, in_file)
+d2009 <- read_weights(file_path,
+                      sheet_i = "Sheet17",
+                      range_i = "A1:m16",
+                      generation_i = 520,
+                      n_flies = 20)
+
+in_file <- "weights/AA-LIVE HYDRATED BODY WEIGHT DATA-1995-2016/BODY WEIGHTS-2011-Sets for Emily-GEN560.xlsx"
+file_path <- here(data_folder, in_file)
+d2011 <- read_weights(file_path,
+                      sheet_i = "Sheet1",
+                      range_i = "A1:m20",
+                      generation_i = 560,
+                      n_flies = 25)
+
+in_file <- "weights/AA-LIVE HYDRATED BODY WEIGHT DATA-1995-2016/BODY WEIGHTS-2013-August-GEN615-Graphs.xlsx"
+file_path <- here(data_folder, in_file)
+d2013 <- read_weights(file_path,
+                      sheet_i = "Sheet2",
+                      range_i = "A1:l8",
+                      generation_i = 615,
+                      n_flies = 20,
+                      del_col = "MONTH-YEAR")
+
+# combine
+# exp1_weight = simons/walker weights from spring summer 2004, approximately gen 384 (but over several gens)
+exp1_cols <- c("treatment", "line", "sex", "mass")
+exp1_weight <- exp1[, .SD, .SDcols = exp1_cols]
+setnames(exp1_weight, old = "mass", new = "fly_weight")
+exp1_weight[, generation := 384]
+exp1_weight[treatment == "AA", treatment := "SEL"]
+keep_cols <- c("generation", "treatment", "line", "sex", "fly_weight")
+weight <- rbind(d1995[, .SD, .SDcols = keep_cols],
+                 d2007[, .SD, .SDcols = keep_cols],
+                 d2009[, .SD, .SDcols = keep_cols],
+                 d2011[, .SD, .SDcols = keep_cols],
+                 d2013[, .SD, .SDcols = keep_cols],
+                 exp1_weight[, .SD, .SDcols = keep_cols])
+
+gg_f <- ggplot(data = weight[sex == "F"],
+             aes(x = generation,
+                 y = fly_weight,
+                 color = treatment)) +
+  geom_point() +
+  theme_pubr()
+gg_m <- ggplot(data = weight[sex == "M"],
+             aes(x = generation,
+                 y = fly_weight,
+                 color = treatment)) +
+  geom_point() +
+  theme_pubr()
+plot_grid(gg_f, gg_m)
+
+weight_means <- weight[, .(fly_weight = mean(fly_weight,
+                                             na.rm = TRUE)),
+                         by = .(generation, sex, treatment)]
+
+gg_f <- ggplot(data = weight_means[sex == "F"],
+             aes(x = generation,
+                 y = fly_weight,
+                 color = treatment)) +
+  geom_point() +
+  theme_pubr()
+gg_m <- ggplot(data = weight_means[sex == "M"],
+             aes(x = generation,
+                 y = fly_weight,
+                 color = treatment)) +
+  geom_point() +
+  theme_pubr()
+plot_grid(gg_f, gg_m)
+```
+
+
+```{r }
+#| label: simons-weight
+#| echo: false
+#| warning: false
+#| eval: true
+
+# using Simons (exp1) data
+m1 <- lmer(mass ~ treatment * sex + (1 | line), data = exp1)
+# singular
+
+m1 <- lm(mass ~ treatment * sex + line, data = exp1)
+m1_sigma <- summary(m1)$sigma
+
+exp1_agg <- exp1[, .(mass = mean(mass)), by = .(treatment, sex, line)]
+m1_agg <- lm(mass ~ treatment * sex, data = exp1_agg)
+m1_agg_emm <- emmeans(m1_agg, specs = c("treatment", "sex"))
+cn_f <- c(1,0,0,0)
+aa_f <- c(0,1,0,0)
+cn_m <- c(0,0,1,0)
+aa_m <- c(0,0,0,1)
+exp1_contrast <- list(
+  list("F: AA - CN" = aa_f - cn_f),
+  list("M: AA - CN" = aa_m - cn_m)
+)
+m1_agg_pairs <- contrast(m1_agg_emm,
+                     method = exp1_contrast,
+                  adjust = "none") |>
+  summary(infer = TRUE) |>
+  data.table()
+m1_agg_emm_dt <- summary(m1_agg_emm) |>
+  data.table()
+cn_means <- m1_agg_emm_dt[treatment == "CN", emmean]
+m1_agg_pairs[, estimate_sd := estimate / m1_sigma]
+m1_agg_pairs[, percent := estimate/cn_means*100]
+```
+
 # Head and Thorax
 # Evolution of wing size and shape in selected lines is small (about 1% difference), at least relative to flight performance and body size
 
@@ -1255,19 +1418,20 @@ for(i in 1:length(folder_list)){
   wing_measures <- wing_measures[valid, , drop = FALSE]
   
   # save landmarks
-  wing_lm <- rbind(
-    wing_lm,
-    data.table(
-      file = str_remove(files_short, "\\.txt$"),
-      temp_id = str_sub(files_short, 2, 2),
-      line_id = str_sub(files_short, 3, 4),
-      sex = str_sub(files_short, 5, 5),
-      exp_id = str_sub(files_short, 6, 6),
-      fly_id = str_extract(files_short, "(?<=^.{6})\\d{1,2}"),
-      fig_mat
-    )
-  )
-  # save wing metrics
+  # wing_lm <- rbind(
+  #   wing_lm,
+  #   data.table(
+  #     file = str_remove(files_short, "\\.txt$"),
+  #     temp_id = str_sub(files_short, 2, 2),
+  #     line_id = str_sub(files_short, 3, 4),
+  #     sex = str_sub(files_short, 5, 5),
+  #     exp_id = str_sub(files_short, 6, 6),
+  #     fly_id = str_extract(files_short, "(?<=^.{6})\\d{1,2}"),
+  #     fig_mat
+  #   )
+  # )
+  
+#  save wing metrics
   wing <- rbind(
     wing,
     data.table(
@@ -1277,7 +1441,8 @@ for(i in 1:length(folder_list)){
       sex = str_sub(files_short, 5, 5),
       exp_id = str_sub(files_short, 6, 6),
       fly_id = str_extract(files_short, "(?<=^.{6})\\d{1,2}"),
-      wing_measures
+      wing_measures,
+      fig_mat
     )
   )
 }
@@ -1294,13 +1459,13 @@ wing[, exp_id := factor(exp_id,
 wing[, sex := factor(sex,
                          levels = c("F","M"))]
 
-wing_lm[, treatment := ifelse(line_id == "A1" |
-                                line_id == "A2",
-                              "SEL", "WT") |>
-          factor(levels = c("WT", "SEL"))]
+# wing_lm[, treatment := ifelse(line_id == "A1" |
+#                                 line_id == "A2",
+#                               "SEL", "WT") |>
+#           factor(levels = c("WT", "SEL"))]
 ```
 
-## Superimposed mean wing shapes show that Selected flies have more distal wing
+## Compared to WT flies, the wings of selected females are slightly shorter, the wings of males have slight more distal area
 
 ```{r }
 #| label: plot-superimposed-wings
@@ -1316,7 +1481,7 @@ wing_lm[, treatment := ifelse(line_id == "A1" |
 
   lm_cols <- do.call(paste0,
                      expand.grid(c("x","y"), keep_cols))
-  lm_mat <- wing_lm[, .SD, .SDcols = lm_cols] |>
+  lm_mat <- wing[, .SD, .SDcols = lm_cols] |>
     as.matrix()
   # get tpr_size as wing span (chord 1 - 17)
   tpr_size <- sqrt((lm_mat[, "x17"] - lm_mat[, "x1"])^2 +
@@ -1326,12 +1491,13 @@ wing_lm[, treatment := ifelse(line_id == "A1" |
   lm_tpr <- tpr(lm_array, 1, 17)
 
   # TPR
-  lm_dt_tpr <- array_2_matrix(lm_tpr) |>
+  lm_tpr_mat <- array_2_matrix(lm_tpr)
+  lm_tpr_dt <- lm_tpr_mat |>
     data.table()
   lm_cols.tpr <- paste0(lm_cols, ".tpr")
-  colnames(lm_dt_tpr) <- lm_cols.tpr
-  wing_tpr <- cbind(wing_lm, lm_dt_tpr)
-  wing_tpr[, "tpr_size" := tpr_size]
+  colnames(lm_tpr_dt) <- lm_cols.tpr
+  wing_tpr <- cbind(wing, lm_tpr_dt)
+  wing_tpr[, "tpr_size" := tpr_size] # should be equal to wing length
   
   lm_means <- wing_tpr[, lapply(.SD, mean),
                          by = .(treatment, sex),
@@ -1351,23 +1517,29 @@ wing_lm[, treatment := ifelse(line_id == "A1" |
 
   
   # TPR with size back in
-  lm_means_size <- wing_tpr[, .(tpr_size = mean(tpr_size)),
-                            by = .(treatment, sex)]
-  
-  
-  lm_cols.tpr <- paste0(lm_cols, ".tpr")
-  colnames(lm_dt_tpr) <- lm_cols.tpr
-  wing_tpr <- cbind(wing_lm, lm_dt_tpr)
-  
+  lm_tpr_size_mat <- lm_tpr_mat * tpr_size
+  lm_tpr_size_dt <- lm_tpr_size_mat |>
+    data.table()
+  lm_cols_size.tpr <- paste0(lm_cols, "_size.tpr")
+  colnames(lm_tpr_size_dt) <- lm_cols_size.tpr
+  wing_tpr <- cbind(wing, lm_tpr_size_dt)
+
   lm_means <- wing_tpr[, lapply(.SD, mean),
-                         by = .(treatment),
-                         .SDcols = c(lm_cols.tpr)]
-  lm_mat <- lm_means[, .SD, .SDcols = lm_cols.tpr] |>
+                         by = .(treatment, sex),
+                         .SDcols = c(lm_cols_size.tpr)]
+  lm_means_f <- lm_means[sex == "F", .SD, .SDcols = lm_cols_size.tpr] |>
     as.matrix()
-  lm_tpr <- matrix_2_array(lm_mat)
-  gg <- plot_2shapes(lm_tpr, 
+  lm_means_f_array <- matrix_2_array(lm_means_f)
+  gg_f <- plot_2shapes(lm_means_f_array, 
                      color_col = rep(c("SEL", "WT"), each = p))
-  gg
+  gg_f
+  lm_means_m <- lm_means[sex == "M", .SD, .SDcols = lm_cols_size.tpr] |>
+    as.matrix()
+  lm_means_m_array <- matrix_2_array(lm_means_m)
+  gg_m <- plot_2shapes(lm_means_m_array, 
+                     color_col = rep(c("SEL", "WT"), each = p))
+  gg_m
+
 ```
 
 ```{r }
@@ -1419,8 +1591,6 @@ ggsave(
 
 gg
 ```
-
-## Biomechanically relevant wing metrics show small (1%) changes in wing size and shape
 
 ```{r }
 #| label: lmm-model

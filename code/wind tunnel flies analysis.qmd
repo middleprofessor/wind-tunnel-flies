@@ -1119,6 +1119,42 @@ m1_agg_pairs[, percent := estimate/cn_means*100]
 ```
 
 # Head and Thorax
+
+```{r}
+#| label: wing-head-thorax-check
+#| echo: false
+#| warning: false
+#| eval: false
+
+
+# check to see if fly_id is same between wing and head-thorax data
+x <- wing[, .SD,
+          .SDcols = c("temp_id", "line_id", "sex", "exp_id",
+                      "fly_id", "wing_length")]
+```
+
+```{r}
+#| label: head-thorax
+#| echo: false
+#| warning: false
+#| eval: true
+
+in_file <- "head-thorax/ht female.xlsx"
+file_path <- here(data_folder, in_file)
+ht_f <- read_excel(file_path,
+                 sheet = "data") |>
+  clean_names() |>
+  data.table()
+in_file <- "head-thorax/htmale.xlsx"
+file_path <- here(data_folder, in_file)
+ht_m <- read_excel(file_path,
+                 sheet = "data") |>
+  clean_names() |>
+  data.table()
+ht <- rbind(ht_f, ht_m)
+
+```
+
 # Evolution of wing size and shape in selected lines is small (about 1% difference), at least relative to flight performance and body size
 
 For wing anatomy, see https://flybase.org/reports/FBim0000853?utm_source=chatgpt.com

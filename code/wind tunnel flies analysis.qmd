@@ -957,22 +957,21 @@ wbf[substr(success_note,1,1) == "Y", success := "Y"]
 #| warning: false
 #| eval: true
 
-gg_f <- ggplot(data = wbf[sex == "F" &
-                            success == "Y"],
+gg_f <- ggplot(data = wbf[sex == "F"],
                aes(x = dial,
                    y = frequency,
                    color = treatment)) +
   geom_point() +
+  scale_color_manual(values = pal_okabe_ito) +
   theme_pubr()
-gg_f
-gg_m <- ggplot(data = wbf[sex == "M" &
-                            success == "Y"],
+gg_m <- ggplot(data = wbf[sex == "M"],
                aes(x = dial,
                    y = frequency,
                    color = treatment)) +
   geom_point() +
+  scale_color_manual(values = pal_okabe_ito) +
   theme_pubr()
-gg_m
+plot_grid(gg_f, gg_m)
 ```
 
 # Body Weight

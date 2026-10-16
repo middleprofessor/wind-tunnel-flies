@@ -57,7 +57,7 @@ dial_to_speed <- 6.42237212 # from my smoke test with screens and forcing throug
 
 ```
 
-# Selected lines have continued to increase mean apparent flying speed for 30+ years
+# Following an initial, rapid increase, selected lines have continued to increase mean-apparent-flying speed by 14.7 cm/s per 100 generations for over 600 generations
 
 Selection started on or before 1991 and continued until 2023.
 
@@ -97,6 +97,131 @@ aa_mean <- line_means[, .(mafs = mean(mafs)),
 ```
 
 ```{r}
+#| label: long-term-evolution-models
+#| echo: false
+#| warning: false
+#| eval: true
+
+wt_line_means <- wt[, .(mafs = mean(mafs)), by = .(line, gen)]
+wt_means <- wt_line_means[, .(mafs = mean(mafs)), by = .(gen)]
+# exponential model with asymptote
+m_exp <- nls(
+  mafs ~ v0 + A * (1 - exp(-k * gen)),
+  data = wt_means,
+  start = list(v0 = 0, A = 260, k = 0.015)
+)
+
+# two part exponential model
+m_two <- nls(
+  mafs ~ v0 + A * (1 - exp(-k * gen)) +
+    b * gen,
+  data = wt_means,
+  start = list(
+    v0 = 0,
+    A = 170,
+    k = 0.025,
+    b = 0.12
+  )
+)
+
+# hyperbolic (asymptotic) model
+m_hyp <- nls(
+  mafs ~ v0 + A * gen / (h + gen),
+  data = wt_means,
+  start = list(v0 = 0, A = 300, h = 100)
+)
+
+# power law (declining but not asymptotic) model
+m_power <- nls(
+  mafs ~ v0 + A * ((1 + c * gen)^p - 1),
+  data = wt_means,
+  start = list(v0 = 0, A = 100, c = 0.02, p = 0.4),
+  algorithm = "port",
+  lower = c(v0 = -50, A = 0, c = 0.000001, p = 0.001),
+  upper = c(v0 = 100, A = 1000, c = 1, p = 0.999),
+  control = nls.control(maxiter = 500)
+)
+
+# m_double <- nls(
+#   mafs ~ v0 +
+#     A1 * (1 - exp(-k1 * gen)) +
+#     A2 * (1 - exp(-k2 * gen)),
+#   data = wt,
+#   start = list(
+#     v0 = 0,
+#     A1 = 170,
+#     k1 = 0.03,
+#     A2 = 130,
+#     k2 = 0.002
+#   ),
+#   control = nls.control(maxiter = 500)
+# )
+
+AIC(m_exp, m_two, m_hyp, m_power)
+
+# account for autocorrelation
+acf(resid(m_two))
+wt_means <- wt_means[order(wt_means$gen), ]
+
+#1. fit model with correlated errors
+k <- coef(m_two)["k"]
+wt_means$exp_term <- 1 - exp(-k * wt_means$gen)
+m_gls <- gls(
+  mafs ~ exp_term + gen,
+  data = wt_means,
+  correlation = corCAR1(form = ~ gen),
+  method = "ML"
+)
+# 2. reestimate k using profile likelihood
+fit_k <- function(k) {
+
+  dat <- wt_means
+  dat$exp_term <- 1 - exp(-k * dat$gen)
+  fit <- gls(
+    mafs ~ exp_term + gen,
+    data = dat,
+    correlation = corCAR1(form = ~ gen),
+    method = "ML",
+    control = glsControl(msMaxIter = 200)
+  )
+
+  -as.numeric(logLik(fit))
+}
+opt <- optimize(
+  fit_k,
+  interval = c(0.005, 0.08)
+)
+opt$minimum
+# 2.5 refit at estimated k
+k_hat <- opt$minimum
+wt_means$exp_term <- 1 - exp(-k_hat * wt_means$gen)
+m_gls <- gls(
+  mafs ~ exp_term + gen,
+  data = wt_means,
+  correlation = corCAR1(form = ~ gen),
+  method = "ML"
+)
+summary(m_gls)
+# 3. check the autocorrelation
+acf(resid(m_gls, type = "normalized"))
+# final checks
+summary(m_gls)$tTable
+intervals(m_gls, which = "coef")
+
+# predicted for plots
+pred <- data.frame(
+  gen = seq(0, max(wt$gen), length.out = 1061)
+)
+pred$exp <- predict(m_exp, newdata = pred)
+pred$two <- predict(m_two, newdata = pred)
+
+k <- coef(m_two)["k"]
+pred$exp_term <- 1 - exp(-k * pred$gen)
+pred$mafs <- predict(m_gls, newdata = pred)
+```
+
+
+```{r}
 #| label: plot-historic-wt-data
 #| echo: false
 #| warning: false
@@ -109,12 +234,12 @@ gg <- ggplot(data = wt,
   geom_point(size = 0.5) +
   
   # each AA line is separate
-  geom_smooth(
-    method = "gam",
-    formula = y ~ s(x, k = 20),
-    method.args = list(method = "REML"),
-    se = FALSE
-  ) +
+  # geom_smooth(
+  #   method = "gam",
+  #   formula = y ~ s(x, k = 3),
+  #   method.args = list(method = "REML"),
+  #   se = FALSE
+  # ) +
   
   # Combine aa lines
   # geom_smooth(
@@ -129,6 +254,18 @@ gg <- ggplot(data = wt,
   #   linewidth = 1.2
   # ) +
 
+  # geom_line(
+  #   data = pred,
+  #   aes(y = exp),
+  #   color = "blue",
+  #   linewidth = 1.2
+  # ) +
+  geom_line(
+    data = pred,
+    aes(y = mafs),
+    color = "black",
+    linewidth = 1.2
+  ) +
   
   scale_color_manual(values = pal_okabe_ito) +
   xlab("Generation") +
@@ -1169,7 +1306,7 @@ m1_agg_pairs[, estimate_sd := estimate / m1_sigma]
 m1_agg_pairs[, percent := estimate/cn_means*100]
 ```
 
-# Head and Thorax are xxx% larger in Selected flies
+# Head and Thorax widths are ~7 SD (15%) larger in Selected lines compared to Wild Type lines
 
 ```{r}
 #| label: head-thorax-import

@@ -1169,23 +1169,10 @@ m1_agg_pairs[, estimate_sd := estimate / m1_sigma]
 m1_agg_pairs[, percent := estimate/cn_means*100]
 ```
 
-# Head and Thorax
+# Head and Thorax are xxx% larger in Selected flies
 
 ```{r}
-#| label: wing-head-thorax-check
-#| echo: false
-#| warning: false
-#| eval: false
-
-
-# check to see if fly_id is same between wing and head-thorax data
-x <- wing[, .SD,
-          .SDcols = c("temp", "line", "sex", "rep",
-                      "fly_id", "wing_length")]
-```
-
-```{r}
-#| label: head-thorax
+#| label: head-thorax-import
 #| echo: false
 #| warning: false
 #| eval: true
@@ -1214,8 +1201,232 @@ ht[, sex := factor(toupper(sex),
                     levels = c("F", "M"))]
 ht[, rep := factor(toupper(rep),
                     levels = c("A", "B"))]
+ht[, treatment := ifelse(substr(line,1,1) == "A", "SEL", "WT")]
+ht[, treatment := factor(treatment, levels = c("WT", "SEL"))]
+```
+
+```{r }
+#| label: wing-head-thorax-lmm-model
+#| echo: false
+#| warning: false
+#| eval: true
+
+# lmm
+
+wht_lmm <- function(wht, # the data.table
+                    y_col = "area", 
+                    sex_i = "F"){
+  r_form <- paste(y_col,
+                  "~ treatment * temp * sex * rep +",
+                  "(1 | line)") |>
+    as.formula()
+  wht_lmm <- lmer(r_form, data = wht)
+  sigma <- summary(wht_lmm)$sigma
+  
+  # emm for statistics (pooled over rep)
+  wht_emm.t.s <- emmeans(
+    wht_lmm,
+    ~ treatment | temp * sex
+  )
+  # emm for plot (not pooled over rep)
+  wht_emm.t.s.r <- emmeans(
+    wht_lmm,
+    ~ treatment | temp * sex * rep
+  )
+
+  # contrast
+  wht_pairs <- contrast(
+    wht_emm.t.s,
+    method = "revpairwise",
+    adjust = "none"
+  ) |>
+    summary(infer = TRUE) |>
+    data.table()
+  
+  # percent and standardized difference
+    WT_means <- summary(wht_emm)[summary(wht_emm)$treatment == "WT", "emmean"]
+
+  wht_pairs[, d_perc := estimate / WT_means * 100]
+  wht_pairs[, d_std := estimate / sigma]
+  wht_pairs[, label := sprintf("\u0394 = %+.3f\n%+.1f%%\n%+.2f SD",
+                              estimate, d_perc, d_std)]
+  wht_pairs[, x := as.integer(temp)]
+
+  wht_out <- list(
+    model = wht_lmm,
+    emm.t.s = wht_emm.t.s,
+    emm.t.s.r = wht_emm.t.s.r,
+    pairs = wht_pairs
+  )
+
+  return(wht_out)
+  
+}
+```
+
+```{r}
+#| label: ht-lmm-check
+#| echo: false
+#| warning: false
+#| eval: false
+
+# ht[!is.na(thorax_width), .(N = .N), by = .(treatment, temp, sex, rep)]
+thorax_m1 <- wht_lmm(ht, y_col = "thorax_width", sex = "F")
 
 ```
+
+```{r }
+#| label: wing-head-thorax-plot
+#| echo: false
+#| warning: false
+#| eval: true
+
+# lmm
+
+wht_plot <- function(wht, # the data.table
+                     wht_m1, # the fit model, emm, and contrast table
+                    y_col = "area", 
+                    sex_i = "F"){
+ 
+  # compute rep : line means means
+  line_means <- wht[, .(fit = mean(get(y_col))),
+                     by = .(treatment, temp, rep,
+                            line, sex)]
+  # line_means <- expand.grid(
+  #   line = levels(wing$line),
+  #   sex = levels(wing$sex),
+  #   temp = levels(wing$temp),
+  #   rep = levels(wing$rep),
+  #   treatment = levels(wing$treatment)
+  # ) |>
+  #   data.table()
+  # line_means[, del := 0]
+  # line_means[line %in% c("A1", "A2") & treatment == "WT", del := 1]
+  # line_means[line %in% c("K4", "L4", "N6") & treatment == "SEL", del := 1]
+  # line_means <- newdat[del == 0,]
+  # line_means[, fit := predict(area_lmm, newdata = newdat)]
+  line_means[, x_temp_treat := as.integer(temp) +
+               (as.integer(treatment)-1.5)/2.5]
+  line_means[treatment == "WT", x_temp_line_treat := x_temp_treat +
+               (as.integer(line)-2)/10]
+  line_means[treatment == "SEL", x_temp_line_treat := x_temp_treat +
+               (as.integer(line)-4.5)/10]
+
+  # raw data to plot
+  plot_data <- wht[, .SD, 
+                    .SDcols = c("temp", "treatment", "rep",
+                                "line","sex", y_col)]
+  plot_data[, x_temp_treat := as.integer(temp) +
+              (as.integer(treatment)-1.5)/2.5 +
+              rnorm(n=nrow(plot_data), mean = 0, sd = 0.01)]
+  plot_data[treatment == "WT", x_temp_line_treat := x_temp_treat +
+              (as.integer(line)-2)/10]
+  plot_data[treatment == "SEL", x_temp_line_treat := x_temp_treat +
+              (as.integer(line)-4.5)/10]
+  # plot_data[, .(x = mean(x)), by = .(temp, treatment)]
+  
+  # emmeans to plot
+  plot_emm <- wht_m1$emm.t.s.r |>
+    summary() |>
+    data.table()
+  plot_emm[, x := as.integer(temp) +
+             (as.integer(treatment)-1.5)/20]
+  
+  # y positions for annotation states
+  max_y <- max(plot_data[sex == sex_i, get(y_col)])
+  min_y <- min(plot_data[sex == sex_i, get(y_col)])
+  add_y <- (max_y - min_y) * .05
+  
+  # plot it
+  gg <- ggplot(data = plot_data[sex == sex_i],
+               aes(x = x_temp_line_treat,
+                   y = get(y_col),
+                   color = treatment)) +
+    # show the data
+    geom_point() +
+    
+    # line means
+    geom_point(data = line_means[sex == sex_i],
+               aes(x = x_temp_line_treat,
+                   y = fit,
+                   shape = rep),
+               size = 2,
+               color = "black") +
+    
+    # treatment : temp means
+    geom_point(data = plot_emm[sex == sex_i],
+               aes(x = x,
+                   y = emmean,
+                   shape = rep),
+               size = 3,
+               color = "black") +
+    geom_point(data = plot_emm[sex == sex_i],
+               aes(x = x,
+                   y = emmean,
+                   color = treatment,
+                   shape = rep),
+               size = 2) +
+    # geom_errorbar(data = plot_emm[sex == sex_i],
+    #               aes(x = x,
+    #                   y = emmean,
+    #                   ymin = lower.CL,
+    #                   ymax = upper.CL,
+    #                   color = treatment)) +
+    
+    # annotation stats
+    geom_text(
+      data = wht_m1$pairs[sex == sex_i,],
+      aes(x = x, y = max_y + 3*add_y, label = label),
+      inherit.aes = FALSE
+    ) + 
+    
+    scale_color_manual(values = pal_okabe_ito) +
+    scale_x_continuous(breaks = 1:3,
+                       labels = c("23°", "26°", "29°")) +
+    coord_cartesian(xlim = c(0.5, 3.5),
+                    ylim = c(min_y - add_y, max_y + 4*add_y)) +
+    theme_pubr() +
+    theme(legend.position="none",
+      axis.title.x = element_blank()) +
+    NULL
+  return(gg)
+  
+}
+```
+
+```{r}
+#| label: head-thorax-plots
+#| echo: false
+#| warning: false
+#| eval: true
+
+thorax_m1_f <- wht_lmm(ht, y_col = "thorax_width", sex = "F")
+gg_thorax_f <- wht_plot(ht, thorax_m1_f, y_col = "thorax_width", sex_i = "F") +
+  ylab("Thorax Width (mm)")
+
+thorax_m1_m <- wht_lmm(ht, y_col = "thorax_width", sex = "M")
+gg_thorax_m <- wht_plot(ht, thorax_m1_m, y_col = "thorax_width", sex_i = "M") +
+  ylab("Thorax Width (mm)")
+
+gg_thorax_f
+gg_thorax_m
+
+
+```
+
+```{r}
+#| label: wing-head-thorax-check
+#| echo: false
+#| warning: false
+#| eval: false
+
+
+# check to see if fly_id is same between wing and head-thorax data
+x <- wing[, .SD,
+          .SDcols = c("temp", "line", "sex", "rep",
+                      "fly_id", "wing_length")]
+```
+
 
 # Evolution of wing size and shape in selected lines is small (about 1% difference), at least relative to flight performance and body size
 

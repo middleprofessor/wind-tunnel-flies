@@ -1,10 +1,14 @@
 ---
-title: "Wind Tunnel Flies Analysis"
+title: "Long term selection on mean-apparent flying speed in *Drosophila melanogaster* resulted in large increase in body size but trivial changes in wing size and shape"
 author: "Jeffrey Walker"
 date: "`r Sys.Date()`"
 format: html
 editor: source
 ---
+
+# Abstract
+
+Long term selection on mean-apparent flying speed in *Drosophila melanogaster* resulted in large gains (30-40%) in upwind burst speed, large increases in body weight (29-50%), thorax (15%) and head (12-15%) size, but only very small changes (0-3%) in wing size and shape, including smaller wing area (2.1-3.4%) in females, and no apparent change in wing beat frequency
 
 ```{r setup, echo=FALSE, message=FALSE}
 # wrangling packages
@@ -1726,7 +1730,7 @@ plot_grid(gg_f, gg_m)
 ```
 
 
-# Head and Thorax widths are 15% (7 SD) larger in Selected lines compared to Wild Type lines
+# Thorax and head widths are 12-15% (7 SD) larger in Selected lines compared to Wild Type lines
 
 ```{r}
 #| label: head-thorax-import
@@ -1959,15 +1963,28 @@ wht_plot <- function(wht, # the data.table
 
 thorax_m1_f <- wht_lmm(ht, y_col = "thorax_width", sex = "F")
 gg_thorax_f <- wht_plot(ht, thorax_m1_f, y_col = "thorax_width", sex_i = "F") +
-  ylab("Thorax Width (mm)")
+  ylab("Thorax Width (mm)") +
+  ggtitle("Female")
 
 thorax_m1_m <- wht_lmm(ht, y_col = "thorax_width", sex = "M")
 gg_thorax_m <- wht_plot(ht, thorax_m1_m, y_col = "thorax_width", sex_i = "M") +
-  ylab("Thorax Width (mm)")
+  ylab("Thorax Width (mm)") +
+  ggtitle("Male")
+
+head_m1_f <- wht_lmm(ht, y_col = "head_width", sex = "F")
+gg_head_f <- wht_plot(ht, head_m1_f, y_col = "head_width", sex_i = "F") +
+  ylab("Head Width (mm)") +
+  ggtitle("Female")
+
+head_m1_m <- wht_lmm(ht, y_col = "head_width", sex = "M")
+gg_head_m <- wht_plot(ht, head_m1_m, y_col = "head_width", sex_i = "M") +
+  ylab("Head Width (mm)") +
+  ggtitle("Male")
 
 gg_thorax_f
 gg_thorax_m
-
+gg_head_f
+gg_head_m
 
 ```
 
@@ -1985,7 +2002,7 @@ x <- wing[, .SD,
 ```
 
 
-# Evolution of wing size and shape in selected lines is small (about 1% difference), at least relative to flight performance and body size
+# Wing size and shape in Selected flies have only very small differences compared to Wild Type flies, at least relative to flight performance and body size traits
 
 For wing anatomy, see https://flybase.org/reports/FBim0000853?utm_source=chatgpt.com
 
@@ -2277,7 +2294,7 @@ for(i in 1:length(folder_list)){
     n_landmarks <- length(lines) - 1
     
     if(n_landmarks != 37){
-      cat(files_short[j], ":", n_landmarks, "landmarks\n")
+ #     cat(files_short[j], ":", n_landmarks, "landmarks\n")
       next
     }
     
@@ -2373,7 +2390,7 @@ wing[, fly_id := as.numeric(fly_id)]
 fly <- merge(wing, ht, by = c("temp", "line", "sex", "rep", "fly_id"))
 ```
 
-## Compared to WT flies, the wings of selected females are slightly shorter, the wings of males have slight more distal area
+## Compared to WT flies, the wings of Selected females are slightly shorter while the wings of Selected males have slightly more distal area
 
 ```{r }
 #| label: plot-superimposed-wings
@@ -2505,9 +2522,6 @@ gg
 #| echo: false
 #| warning: false
 #| eval: true
-#| fig-width: 8
-#| fig-height: 11
-#| out-width: "100%"
 
 # lmm
 wing_metric_plot <- function(y_col = "area",
@@ -2668,6 +2682,18 @@ gg_r2_f <- wing_metric_plot(y_col = "r2_hat_sq", sex_i = "F") +
   ylab(expression(hat(r)[2]^2))
 gg_r2_m <- wing_metric_plot(y_col = "r2_hat_sq", sex_i = "M") +
   ylab(expression(hat(r)[2]^2))
+```
+
+## Compared to WT flies, Selected females have 2.1 - 3.4% (.64 - .86 SD) smaller wing area but .7 - 1.5% (.66 - 1.5 SD) greater normalized second moment of area
+
+```{r }
+#| label: wing-metrics-plot-female
+#| echo: false
+#| warning: false
+#| eval: true
+#| fig-width: 8
+#| fig-height: 11
+#| out-width: "100%"
 
 gg_f <- plot_grid(gg_area_f,gg_WL_f,gg_WC_f,gg_AR_f,gg_r_f,gg_r2_f,
                   nrow = 3)
@@ -2679,7 +2705,20 @@ ggsave(
   dpi = 300
 )
 gg_f
+```
 
+
+## Compared to WT flies, Selected males have 0.3 - 1.6% (.08 - .4 SD) greater wing area and 0.5 - 1.2% (.22 - .5 SD) greater normalized second moment of area
+
+```{r }
+#| label: wing-metrics-plot-male
+#| echo: false
+#| warning: false
+#| eval: true
+#| fig-width: 8
+#| fig-height: 11
+#| out-width: "100%"
+#| 
 gg_m <- plot_grid(gg_area_m,gg_WL_m,gg_WC_m,gg_AR_m,gg_r_m,gg_r2_m,
                   nrow = 3)
 ggsave(

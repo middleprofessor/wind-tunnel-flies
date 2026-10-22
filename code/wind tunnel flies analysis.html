@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Jeffrey Walker">
-<meta name="dcterms.date" content="2026-10-13">
+<meta name="dcterms.date" content="2026-10-21">
 
 <title>Wind Tunnel Flies Analysis</title>
 <style>
@@ -100,7 +100,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">October 13, 2026</p>
+      <p class="date">October 21, 2026</p>
     </div>
   </div>
   
@@ -112,9 +112,25 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </header>
 
 
-<section id="selected-lines-have-continued-to-increase-mean-apparent-flying-speed-for-30-years" class="level1">
-<h1>Selected lines have continued to increase mean apparent flying speed for 30+ years</h1>
+<section id="following-an-initial-rapid-increase-selected-lines-have-continued-to-increase-mean-apparent-flying-speed-by-14.7-cms-per-100-generations-for-over-600-generations" class="level1">
+<h1>Following an initial, rapid increase, selected lines have continued to increase mean-apparent-flying speed by 14.7 cm/s per 100 generations for over 600 generations</h1>
 <p>Selection started on or before 1991 and continued until 2023.</p>
+<div class="cell">
+<div class="cell-output cell-output-stdout">
+<pre><code>        df      AIC                                           note
+m_exp    4 3750.487               exponential model with asymptote
+m_two    5 3666.992                     two part exponential model
+m_hyp    4 3730.455                  hyperbolic (asymptotic) model
+m_power  5 3698.856 power law (declining but not asymptotic) model</code></pre>
+</div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="wind-tunnel-flies-analysis_files/figure-html/long-term-evolution-models-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
 <div class="cell">
 <div class="cell-output-display">
 <div>
@@ -140,7 +156,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="linear-mixed-model" class="level3">
 <h3 class="anchored" data-anchor-id="linear-mixed-model">Linear mixed model</h3>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>exp1_lmm <span class="ot">&lt;-</span> <span class="fu">lmer</span>(wind_speed <span class="sc">~</span> treatment <span class="sc">*</span> sex <span class="sc">+</span> (<span class="dv">1</span> <span class="sc">|</span> line), <span class="at">data =</span> exp1)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>exp1_lmm <span class="ot">&lt;-</span> <span class="fu">lmer</span>(wind_speed <span class="sc">~</span> treatment <span class="sc">*</span> sex <span class="sc">+</span> (<span class="dv">1</span> <span class="sc">|</span> line), <span class="at">data =</span> exp1)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 <div class="cell">
 <div class="cell-output-display">
@@ -212,8 +228,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <th style="text-align: right;" data-quarto-table-cell-role="th">upper.CL</th>
 <th style="text-align: right;" data-quarto-table-cell-role="th">t.ratio</th>
 <th style="text-align: right;" data-quarto-table-cell-role="th">p.value</th>
-<th style="text-align: right;" data-quarto-table-cell-role="th">effect_std</th>
-<th style="text-align: right;" data-quarto-table-cell-role="th">effect_perc</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">d_std</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">d_perc</th>
 </tr>
 </thead>
 <tbody>
@@ -256,34 +272,9 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>
 </div>
 </div>
-</section>
-<section id="supplementary-models-in-supplement" class="level3">
-<h3 class="anchored" data-anchor-id="supplementary-models-in-supplement">Supplementary models (in supplement)</h3>
-<section id="classical-ancova" class="level4">
-<h4 class="anchored" data-anchor-id="classical-ancova">Classical ANCOVA</h4>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>lm_ancova <span class="ot">&lt;-</span> <span class="fu">lm</span>(wind_speed <span class="sc">~</span> treatment <span class="sc">*</span> sex <span class="sc">+</span> room_temp, <span class="at">data =</span> exp1)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>lm_ancova <span class="ot">&lt;-</span> <span class="fu">lm</span>(wind_speed <span class="sc">~</span> treatment <span class="sc">*</span> sex <span class="sc">+</span> room_temp, <span class="at">data =</span> exp1)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
-<div class="cell">
-<div class="cell-output cell-output-stdout">
-<pre><code>                   Estimate Std. Error   t value     Pr(&gt;|t|)
-(Intercept)       81.711480 19.4038624  4.211094 5.489451e-05
-treatmentAA       42.306592  4.4651446  9.474854 1.183689e-15
-sexM             -11.954235  4.5686965 -2.616553 1.023147e-02
-room_temp          2.515874  0.8895549  2.828239 5.635325e-03
-treatmentAA:sexM   7.766310  6.1944225  1.253758 2.127958e-01</code></pre>
-</div>
-<div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img src="wind-tunnel-flies-analysis_files/figure-html/exp1-lm-room-temp-stats-1.png" class="img-fluid figure-img" width="672"></p>
-</figure>
-</div>
-</div>
-</div>
-</section>
-<section id="random-intercept-with-covariate" class="level4">
-<h4 class="anchored" data-anchor-id="random-intercept-with-covariate">Random intercept with covariate</h4>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb4"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>exp1_lmm_2 <span class="ot">&lt;-</span> <span class="fu">lmer</span>(wind_speed <span class="sc">~</span> treatment <span class="sc">*</span> sex <span class="sc">+</span> room_temp <span class="sc">+</span> (<span class="dv">1</span> <span class="sc">|</span> line), <span class="at">data =</span> exp1)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
@@ -382,35 +373,11 @@ treatmentAA:sexM   7.766310  6.1944225  1.253758 2.127958e-01</code></pre>
 
 </div>
 </div>
-</section>
-<section id="classical-nested-anova" class="level4">
-<h4 class="anchored" data-anchor-id="classical-nested-anova">Classical nested ANOVA</h4>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>exp1_aov <span class="ot">&lt;-</span> <span class="fu">aov</span>(wind_speed <span class="sc">~</span> treatment <span class="sc">*</span> sex <span class="sc">+</span> <span class="fu">Error</span>(line <span class="sc">/</span> sex),</span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>          <span class="at">data =</span> exp1)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>          <span class="at">data =</span> exp1)</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="fu">summary</span>(exp1_aov)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
-<div class="cell">
-<div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">summary</span>(exp1_aov)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>
-Error: line
-              Df Sum Sq Mean Sq
-treatment      1  58570   58570
-sex            1   3237    3237
-treatment:sex  1      3       3
-
-Error: line:sex
-              Df Sum Sq Mean Sq F value Pr(&gt;F)
-sex            1 1808.1  1808.1   5.617  0.141
-treatment:sex  1  403.2   403.2   1.253  0.379
-Residuals      2  643.7   321.9               
-
-Error: Within
-          Df Sum Sq Mean Sq F value Pr(&gt;F)
-Residuals 99  23708   239.5               </code></pre>
-</div>
-</div>
-</section>
 </section>
 </section>
 <section id="experiment-2-wheeler-data" class="level2">
@@ -499,6 +466,18 @@ Confidence level used: 0.95 </code></pre>
 </div>
 </section>
 </section>
+<section id="kinematics" class="level1">
+<h1>Kinematics</h1>
+<div class="cell">
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="wind-tunnel-flies-analysis_files/figure-html/wing-beat-frequency-analysis-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+</section>
 <section id="body-weight" class="level1">
 <h1>Body Weight</h1>
 <div class="cell">
@@ -518,74 +497,22 @@ Confidence level used: 0.95 </code></pre>
 </div>
 </div>
 </section>
-<section id="head-and-thorax" class="level1">
-<h1>Head and Thorax</h1>
+<section id="head-and-thorax-widths-are-7-sd-15-larger-in-selected-lines-compared-to-wild-type-lines" class="level1">
+<h1>Head and Thorax widths are ~7 SD (15%) larger in Selected lines compared to Wild Type lines</h1>
 <div class="cell">
-<div class="cell-output cell-output-stdout">
-<pre><code>      temp   line    sex    rep     N
-    &lt;char&gt; &lt;char&gt; &lt;char&gt; &lt;char&gt; &lt;int&gt;
- 1:      x     a1      f      a    24
- 2:      x     a1      f      b    24
- 3:      y     a1      f      a    26
- 4:      y     a1      f      b    25
- 5:      z     a1      f      a    21
- 6:      z     a1      f      b    22
- 7:      x     a2      f      a    24
- 8:      x     a2      f      b    24
- 9:      y     a2      f      a    20
-10:      y     a2      f      b    24
-11:      z     a2      f      a    25
-12:      z     a2      f      b    26
-13:      x     k4      f      a    22
-14:      x     k4      f      b    20
-15:      y     k4      f      a    25
-16:      y     k4      f      b    25
-17:      z     k4      f      a    25
-18:      z     k4      f      b    23
-19:      x     l4      f      a    23
-20:      x     l4      f      b    25
-21:      y     l4      f      a    24
-22:      y     l4      f      b    23
-23:      z     l4      f      a    22
-24:      z     l4      f      b    25
-25:      x     n6      f      a    23
-26:      x     n6      f      b    22
-27:      y     n6      f      a    26
-28:      y     n6      f      b    25
-29:      z     n6      f      a    26
-30:      z     n6      f      b    25
-31:      x     n6      m      a    24
-32:      x     n6      m      b    23
-33:      y     n6      m      a    23
-34:      y     n6      m      b    25
-35:      z     n6      m      a    20
-36:      z     n6      m      b    23
-37:      x     l4      m      a    25
-38:      x     l4      m      b    23
-39:      y     l4      m      a    24
-40:      y     l4      m      b    23
-41:      z     l4      m      a    23
-42:      z     l4      m      b    19
-43:      x     k4      m      a    24
-44:      x     k4      m      b    23
-45:      y     k4      m      a    25
-46:      y     k4      m      b    25
-47:      z     k4      m      a    25
-48:      z     k4      m      b    24
-49:      x     a2      m      a    26
-50:      x     a2      m      b    24
-51:      y     a2      m      a    24
-52:      y     a2      m      b    25
-53:      z     a2      m      a    25
-54:      z     a2      m      b    22
-55:      x     a1      m      a    25
-56:      x     a1      m      b    24
-57:      y     a1      m      a    25
-58:      y     a1      m      b    24
-59:      z     a1      m      a    25
-60:      z     a1      m      b    23
-      temp   line    sex    rep     N
-    &lt;char&gt; &lt;char&gt; &lt;char&gt; &lt;char&gt; &lt;int&gt;</code></pre>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="wind-tunnel-flies-analysis_files/figure-html/head-thorax-plots-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="wind-tunnel-flies-analysis_files/figure-html/head-thorax-plots-2.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
 </div>
 </div>
 </section>
@@ -659,6 +586,15 @@ WXN6MA10pp.txt : 38 landmarks</code></pre>
 <div>
 <figure class="figure">
 <p><img src="wind-tunnel-flies-analysis_files/figure-html/lmm-model-2.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="wind-tunnel-flies-analysis_files/figure-html/wing-vs-thorax-1.png" class="img-fluid figure-img" width="672"></p>
 </figure>
 </div>
 </div>

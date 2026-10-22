@@ -408,7 +408,7 @@ exp1_summary
 
 ```{r}
 #| label: exp1-lmm-random-intercept
-#| echo: true
+#| echo: false
 #| warning: false
 #| eval: true
 
@@ -514,7 +514,7 @@ fixed_means <- exp1[, .(speed = mean(wind_speed)),
 #| warning: false
 #| eval: true
 
-means_plot <- function(plot_y = "wind_speed",
+exp1_plot <- function(plot_y = "wind_speed",
                        plot_emm = exp1_emm,
                        plot_lines = exp1_line_means,
                        plot_pairs = exp1_pairs,
@@ -585,6 +585,7 @@ means_plot <- function(plot_y = "wind_speed",
                       ymax = upper.CL),
                   width = 0) +
     
+    # effects annotation
     geom_text(
       data = plot_pairs[sex == plot_sex,],
       aes(x = x, y = max_y + 3*add_y, label = label),
@@ -605,8 +606,8 @@ means_plot <- function(plot_y = "wind_speed",
   return(gg)
 }
 
-gg_f <- means_plot(plot_sex = "F", plot_title = "Female")
-gg_m <- means_plot(plot_sex = "M", plot_title = "Male")
+gg_f <- exp1_plot(plot_sex = "F", plot_title = "Female")
+gg_m <- exp1_plot(plot_sex = "M", plot_title = "Male")
 plot_grid(gg_f, gg_m, ncol = 2)
 ```
 
@@ -694,14 +695,14 @@ means_plot_orig <- function(plot_sex = "F", title = "Female"){
   return(gg)
 }
 
-gg_f <- means_plot(plot_sex = "F", title = "Female")
-gg_m <- means_plot(plot_sex = "M", title = "Male")
+gg_f <- exp1_plot(plot_sex = "F", title = "Female")
+gg_m <- exp1_plot(plot_sex = "M", title = "Male")
 plot_grid(gg_f, gg_m, ncol = 2)
 ```
 
 ```{r}
 #| label: exp1-lm-room-temp
-#| echo: true
+#| echo: false
 #| warning: false
 #| eval: false
 
@@ -728,7 +729,7 @@ ggplot(data = exp1,
 
 ```{r }
 #| label: exp1-lmm-room-temp
-#| echo: true
+#| echo: false
 #| warning: false
 #| eval: false
 
@@ -771,7 +772,7 @@ exp1_lmm_2_pairs|>
 
 ```{r }
 #| label: exp1-classical-nested-anova
-#| echo: true
+#| echo: false
 #| warning: false
 #| eval: false
 
@@ -965,10 +966,10 @@ aa_m <- c(0,0,0,0,0,1)
 exp2_contrasts <- list(
   list("F: AA - CN" = aa_f - cn_f),
   list("F: AA - WT" = aa_f - wild_f),
-  list("F: CN - WT" = cn_f - wild_f),
+#  list("F: CN - WT" = cn_f - wild_f),
   list("M: AA - CN" = aa_m - cn_m),
-  list("M: AA - WT" = aa_m - wild_m),
-  list("M: CN - WT" = cn_m - wild_m)
+  list("M: AA - WT" = aa_m - wild_m)
+#  list("M: CN - WT" = cn_m - wild_m)
 )
 
 exp2_pairs <- contrast(exp2_emm,
@@ -976,19 +977,21 @@ exp2_pairs <- contrast(exp2_emm,
                       adjust = "none") |>
   summary(infer = TRUE) |>
   data.table()
-exp2_pairs[, effect_std := estimate / sigma]
-# set up order for effects plot
-exp2_pairs[, contrast := factor(contrast,
-                                levels = c("M: CN - WT",
-                                           "M: AA - WT",
-                                           "M: AA - CN",
-                                           "F: CN - WT",
-                                           "F: AA - WT",
-                                           "F: AA - CN"))]
+# standardized effect
+exp2_pairs[, d_std := estimate / exp2_sigma]
+# percent effect
+exp2_emm_dt <- summary(exp2_emm) |> data.table()
+exp2_cn_means <- exp2_emm_dt[treatment == "CN", emmean]
+exp2_wt_means <- exp2_emm_dt[treatment == "WT", emmean]
+exp2_means <- exp2_emm_dt[treatment != "AA", emmean]
+exp2_pairs[, d_perc := estimate / exp2_means * 100]
 
+# set up order for effects plot
 exp2_emm
 exp2_pairs
-
+exp2_pairs[, sex := substr(contrast, 1, 1)]
+exp2_pairs[, label := sprintf("\u0394 = %+.3f\n%+.1f%%\n%+.2f SD",
+                              estimate, d_perc, d_std)]
 ```
 
 ```{r }
@@ -998,7 +1001,7 @@ exp2_pairs
 #| eval: true
 
 # compute conditional means
-newdat <- expand.grid(
+exp2_line_means <- expand.grid(
   line = levels(exp2_primary$line),
   sex = levels(exp2_primary$sex)
 ) |>
@@ -1006,10 +1009,10 @@ newdat <- expand.grid(
 # newdat[, treatment := line]
 # newdat[substr(line,1,2) == "aa", treatment := "aa"]
 # newdat[substr(line,1,2) == "cn", treatment := "cn"]
-newdat[, treatment := substr(line,1,2)]
-newdat[treatment == "K4", treatment := "Wild"]
-newdat[treatment == "N6", treatment := "Wild"]
-newdat[, fit := predict(exp2_lmm, newdata = newdat)]
+exp2_line_means[, treatment := substr(line,1,2)]
+exp2_line_means[treatment == "K4", treatment := "Wild"]
+exp2_line_means[treatment == "N6", treatment := "Wild"]
+exp2_line_means[, fit := predict(exp2_lmm, newdata = exp2_line_means)]
 
 ```
 
@@ -1019,7 +1022,9 @@ newdat[, fit := predict(exp2_lmm, newdata = newdat)]
 #| warning: false
 #| eval: true
 
-means_plot_dots <- function(plot_sex = "F", title = "Female"){
+exp2_plot <- function(plot_pairs = exp2_pairs,
+                      plot_sex = "F",
+                      title = "Female"){
   offset <- 0.25
   x_breaks <- c(1-offset, 1+offset, 2-offset, 2+offset,
                 3-offset, 3+offset)
@@ -1037,12 +1042,21 @@ means_plot_dots <- function(plot_sex = "F", title = "Female"){
   plot_data[line == "N60", x := 2 + offset]
   plot_data[line == "AA1", x := 3 - offset]
   plot_data[line == "AA2", x := 3 + offset]
-  newdat[line == "CN1", x := 1 - offset]
-  newdat[line == "CN2", x := 1 + offset]
-  newdat[line == "K45", x := 2 - offset]
-  newdat[line == "N60", x := 2 + offset]
-  newdat[line == "AA1", x := 3 - offset]
-  newdat[line == "AA2", x := 3 + offset]
+  exp2_line_means[line == "CN1", x := 1 - offset]
+  exp2_line_means[line == "CN2", x := 1 + offset]
+  exp2_line_means[line == "K45", x := 2 - offset]
+  exp2_line_means[line == "N60", x := 2 + offset]
+  exp2_line_means[line == "AA1", x := 3 - offset]
+  exp2_line_means[line == "AA2", x := 3 + offset]
+
+  # annotation, x-position
+  plot_pairs[, x := c(1.5, 2.5, 1.5, 2.5)]
+  
+  # numbers to annotate plots with statistics
+  # y positions for annotation states
+  max_y <- max(plot_data[, wind_speed])
+  min_y <- min(plot_data[, wind_speed])
+  add_y <- (max_y - min_y) * .05
 
   gg <- ggplot(data = plot_data[sex == plot_sex],
                aes(x = x,
@@ -1058,7 +1072,7 @@ means_plot_dots <- function(plot_sex = "F", title = "Female"){
                 color = "gray") +
 
     # line means
-    geom_point(data = newdat[sex == plot_sex],
+    geom_point(data = exp2_line_means[sex == plot_sex],
                aes(x = x,
                    y = fit),
                size = 2) +
@@ -1075,6 +1089,14 @@ means_plot_dots <- function(plot_sex = "F", title = "Female"){
                       ymax = upper.CL),
                   width = 0) +
     
+    # effects annotation
+    geom_text(
+      data = plot_pairs[sex == plot_sex &
+                          contrast == paste0(plot_sex, ": AA - WT"),],
+      aes(x = x, y = max_y + 3*add_y, label = label),
+      inherit.aes = FALSE
+    ) +
+    
     # clean plot
     ylab("Max Opposing Wind Speed (cm/s)") +
     scale_color_manual(values = c(pal_okabe_ito[1],
@@ -1087,14 +1109,14 @@ means_plot_dots <- function(plot_sex = "F", title = "Female"){
     theme_pubr() +
     theme(legend.position="none",
           axis.title.x = element_blank()) +
-    coord_cartesian(ylim = c(0, 250),
+    coord_cartesian(ylim = c(min_y - add_y, max_y + 4*add_y),
                     xlim = c(0.7, 3.3)) +
     ggtitle(title)
   return(gg)
 }
 
-gg_f <- means_plot_dots(plot_sex = "F", title = "Female")
-gg_m <- means_plot_dots(plot_sex = "M", title = "Male")
+gg_f <- exp2_plot(plot_sex = "F", title = "Female")
+gg_m <- exp2_plot(plot_sex = "M", title = "Male")
 plot_grid(gg_f, gg_m, ncol = 2)
 ```
 
@@ -1102,7 +1124,7 @@ plot_grid(gg_f, gg_m, ncol = 2)
 #| label: exp2-conditional-mean-plot-boxplot
 #| echo: false
 #| warning: false
-#| eval: true
+#| eval: false
 
 means_plot_violin <- function(plot_sex = "F", title = "Female"){
 
@@ -1355,14 +1377,14 @@ m3_pairs[, label := sprintf("\u0394 = %+.3f\n%+.1f%%\n%+.2f SD",
                               estimate, d_perc, d_std)]
 m3_pairs[, sex := substr(contrast,1,1)]
 
-gg_f <- means_plot(plot_y = "mass",
+gg_f <- exp1_plot(plot_y = "mass",
                        plot_emm = m3_emm,
                        plot_lines = m2_line_means,
                        plot_pairs = m3_pairs,
                        plot_sex = "F",
                        plot_title = "Female",
                        y_label = "Weight (mg)")
-gg_m <- means_plot(plot_y = "mass",
+gg_m <- exp1_plot(plot_y = "mass",
                        plot_emm = m3_emm,
                        plot_lines = m2_line_means,
                        plot_pairs = m3_pairs,
@@ -1465,6 +1487,11 @@ d2016 <- read_weights(file_path,
 ```
 
 ```{r}
+#| label: weight_plot
+#| echo: false
+#| warning: false
+#| eval: true
+
 weight_plot <- function(data_in = d2013,
                         plot_y = "fly_weight",
                        plot_emm = m1_emm,
@@ -1625,7 +1652,7 @@ plot_grid(gg_f, gg_m, ncol = 2)
 #| label: fly-weight-combine
 #| echo: false
 #| warning: false
-#| eval: true
+#| eval: false
 
 # combine
 # exp1_weight = simons/walker weights from spring summer 2004, approximately gen 384 (but over several gens)
@@ -1701,9 +1728,7 @@ plot_grid(gg_f, gg_m)
 ```
 
 
-
-
-# Head and Thorax widths are ~7 SD (15%) larger in Selected lines compared to Wild Type lines
+# Head and Thorax widths are 15% (7 SD) larger in Selected lines compared to Wild Type lines
 
 ```{r}
 #| label: head-thorax-import

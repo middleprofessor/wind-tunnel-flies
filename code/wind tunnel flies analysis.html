@@ -22,40 +22,6 @@ ul.task-list li input[type="checkbox"] {
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
 }
-/* CSS for syntax highlighting */
-pre > code.sourceCode { white-space: pre; position: relative; }
-pre > code.sourceCode > span { line-height: 1.25; }
-pre > code.sourceCode > span:empty { height: 1.2em; }
-.sourceCode { overflow: visible; }
-code.sourceCode > span { color: inherit; text-decoration: inherit; }
-div.sourceCode { margin: 1em 0; }
-pre.sourceCode { margin: 0; }
-@media screen {
-div.sourceCode { overflow: auto; }
-}
-@media print {
-pre > code.sourceCode { white-space: pre-wrap; }
-pre > code.sourceCode > span { display: inline-block; text-indent: -5em; padding-left: 5em; }
-}
-pre.numberSource code
-  { counter-reset: source-line 0; }
-pre.numberSource code > span
-  { position: relative; left: -4em; counter-increment: source-line; }
-pre.numberSource code > span > a:first-child::before
-  { content: counter(source-line);
-    position: relative; left: -1em; text-align: right; vertical-align: baseline;
-    border: none; display: inline-block;
-    -webkit-touch-callout: none; -webkit-user-select: none;
-    -khtml-user-select: none; -moz-user-select: none;
-    -ms-user-select: none; user-select: none;
-    padding: 0 4px; width: 4em;
-  }
-pre.numberSource { margin-left: 3em;  padding-left: 4px; }
-div.sourceCode
-  {   }
-@media screen {
-pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
-}
 </style>
 
 
@@ -143,10 +109,8 @@ m_power  5 3698.856 power law (declining but not asymptotic) model</code></pre>
 <li>Gene flow between lines</li>
 </ol>
 </section>
-<section id="selected-lines-have-30-40-2.8-3.3-sd-higher-upwind-flight-ability-than-control-or-wild-type-lines" class="level1">
-<h1>Selected lines have 30-40% (2.8 – 3.3 SD) higher upwind flight ability than control or wild type lines</h1>
-<section id="experiment-1-simons-walker-data" class="level2">
-<h2 class="anchored" data-anchor-id="experiment-1-simons-walker-data">Experiment 1 (Simons-Walker data)</h2>
+<section id="selected-lines-have-30-40-2.8-3.3-sd-higher-upwind-flight-ability-than-control-lines-in-generation-384" class="level1">
+<h1>Selected lines have 30-40% (2.8 – 3.3 SD) higher upwind flight ability than Control lines in generation 384</h1>
 <p>Method summary:</p>
 <ol type="1">
 <li>Compared selected (AA), control (CN) and wild-type lines (K45, N60) with more recent collection from wild than CN lines. 2.individual flies introduced into standard wind tunnel and tested using increasing velocity test (as in fish)</li>
@@ -154,8 +118,6 @@ m_power  5 3698.856 power law (declining but not asymptotic) model</code></pre>
 <li>flights &gt;= 5 cm were considered successful and the wind speed was increased.</li>
 <li>Individual flies tested at multiple speeds, until failed to fly &gt;= 5 cm.</li>
 </ol>
-<section id="linear-mixed-model" class="level3">
-<h3 class="anchored" data-anchor-id="linear-mixed-model">Linear mixed model</h3>
 <div class="cell">
 <div class="cell-output-display">
 <table class="table caption-top table-sm table-striped small" data-quarto-postprocess="true">
@@ -270,21 +232,9 @@ m_power  5 3698.856 power law (declining but not asymptotic) model</code></pre>
 </div>
 </div>
 </div>
-<div class="cell">
-<div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>lm_ancova <span class="ot">&lt;-</span> <span class="fu">lm</span>(wind_speed <span class="sc">~</span> treatment <span class="sc">*</span> sex <span class="sc">+</span> room_temp, <span class="at">data =</span> exp1)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</div>
-<div class="cell">
-<div class="sourceCode cell-code" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>exp1_lmm_2 <span class="ot">&lt;-</span> <span class="fu">lmer</span>(wind_speed <span class="sc">~</span> treatment <span class="sc">*</span> sex <span class="sc">+</span> room_temp <span class="sc">+</span> (<span class="dv">1</span> <span class="sc">|</span> line), <span class="at">data =</span> exp1)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</div>
-<div class="cell">
-<div class="sourceCode cell-code" id="cb4"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>exp1_aov <span class="ot">&lt;-</span> <span class="fu">aov</span>(wind_speed <span class="sc">~</span> treatment <span class="sc">*</span> sex <span class="sc">+</span> <span class="fu">Error</span>(line <span class="sc">/</span> sex),</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>          <span class="at">data =</span> exp1)</span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="fu">summary</span>(exp1_aov)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</div>
 </section>
-</section>
-<section id="experiment-2-wheeler-data" class="level2">
-<h2 class="anchored" data-anchor-id="experiment-2-wheeler-data">Experiment 2 (Wheeler) data</h2>
+<section id="selected-females-have-50-1.6-sd-and-selected-males-have-40-1.3-sd-higher-upwind-flight-ability-than-wild-type-lines-in-generation-550" class="level1">
+<h1>Selected females have 50% (1.6 SD) and Selected males have 40% (1.3 SD) higher upwind flight ability than Wild Type lines in generation 550</h1>
 <ol type="1">
 <li>Compared selected (AA), control (CN) and wild-type lines (K45, N60) with more recent collection from wild than CN lines.</li>
 <li>(batches of flies introduced into standard wind tunnel and tested using decreasing velocity test</li>
@@ -319,22 +269,18 @@ Degrees-of-freedom method: kenward-roger
 Confidence level used: 0.95 </code></pre>
 </div>
 <div class="cell-output cell-output-stdout">
-<pre><code>     contrast  estimate       SE       df  lower.CL     upper.CL   t.ratio
-       &lt;fctr&gt;     &lt;num&gt;    &lt;num&gt;    &lt;num&gt;     &lt;num&gt;        &lt;num&gt;     &lt;num&gt;
-1: F: AA - CN  61.85944 9.435633 3.141336  32.58108  91.13780221  6.555939
-2: F: AA - WT  50.43575 9.470134 3.187887  21.27793  79.59356322  5.325769
-3: F: CN - WT -11.42369 9.472880 3.191263 -40.57381  17.72642498 -1.205937
-4: M: AA - CN  72.47938 9.442206 3.150362  43.22535 101.73339881  7.676106
-5: M: AA - WT  43.23866 9.471343 3.189398  14.08436  72.39296473  4.565209
-6: M: CN - WT -29.24071 9.468717 3.185970 -58.40335  -0.07807473 -3.088139
-       p.value effect_std
-         &lt;num&gt;      &lt;num&gt;
-1: 0.006251600  1.9033031
-2: 0.011063085  1.5518167
-3: 0.309582493 -0.3514864
-4: 0.003859746  2.2300594
-5: 0.017242876  1.3303755
-6: 0.049662847 -0.8996839</code></pre>
+<pre><code>     contrast estimate       SE       df lower.CL  upper.CL  t.ratio
+       &lt;char&gt;    &lt;num&gt;    &lt;num&gt;    &lt;num&gt;    &lt;num&gt;     &lt;num&gt;    &lt;num&gt;
+1: F: AA - CN 61.85944 9.435633 3.141336 32.58108  91.13780 6.555939
+2: F: AA - WT 50.43575 9.470134 3.187887 21.27793  79.59356 5.325769
+3: M: AA - CN 72.47938 9.442206 3.150362 43.22535 101.73340 7.676106
+4: M: AA - WT 43.23866 9.471343 3.189398 14.08436  72.39296 4.565209
+       p.value    d_std   d_perc
+         &lt;num&gt;    &lt;num&gt;    &lt;num&gt;
+1: 0.006251600 1.903303 68.50457
+2: 0.011063085 1.551817 49.58125
+3: 0.003859746 2.230059 92.08546
+4: 0.017242876 1.330376 40.05452</code></pre>
 </div>
 </div>
 <div class="cell">
@@ -346,16 +292,6 @@ Confidence level used: 0.95 </code></pre>
 </div>
 </div>
 </div>
-<div class="cell">
-<div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img src="wind-tunnel-flies-analysis_files/figure-html/exp2-conditional-mean-plot-boxplot-1.png" class="img-fluid figure-img" width="672"></p>
-</figure>
-</div>
-</div>
-</div>
-</section>
 </section>
 <section id="the-combined-plot-suggests-that-experiment-2-collected-substantial-submaximal-data" class="level2">
 <h2 class="anchored" data-anchor-id="the-combined-plot-suggests-that-experiment-2-collected-substantial-submaximal-data">The combined plot suggests that Experiment 2 collected substantial submaximal data</h2>
@@ -506,23 +442,14 @@ WXN6MA10pp.txt : 38 landmarks</code></pre>
 <div class="cell-output-display">
 <div>
 <figure class="figure">
-<p><img src="wind-tunnel-flies-analysis_files/figure-html/lmm-model-1.png" class="img-fluid figure-img" width="672"></p>
+<p><img src="wind-tunnel-flies-analysis_files/figure-html/lmm-model-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
 </figure>
 </div>
 </div>
 <div class="cell-output-display">
 <div>
 <figure class="figure">
-<p><img src="wind-tunnel-flies-analysis_files/figure-html/lmm-model-2.png" class="img-fluid figure-img" width="672"></p>
-</figure>
-</div>
-</div>
-</div>
-<div class="cell">
-<div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img src="wind-tunnel-flies-analysis_files/figure-html/wing-vs-thorax-1.png" class="img-fluid figure-img" width="672"></p>
+<p><img src="wind-tunnel-flies-analysis_files/figure-html/lmm-model-2.png" class="img-fluid figure-img" style="width:100.0%"></p>
 </figure>
 </div>
 </div>

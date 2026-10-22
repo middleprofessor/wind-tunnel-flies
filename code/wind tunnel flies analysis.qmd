@@ -337,8 +337,7 @@ summary(m_250)
 intervals(m_250)
 ```
 
-# Selected lines have 30-40% (2.8 -- 3.3 SD) higher upwind flight ability than control or wild type lines
-## Experiment 1 (Simons-Walker data)
+# Selected lines have 30-40% (2.8 -- 3.3 SD) higher upwind flight ability than Control lines in generation 384
 
 Method summary:
 
@@ -404,7 +403,6 @@ exp1_summary <- exp1[, .(wind_speed = mean(wind_speed)), by = .(treatment, sex, 
 exp1_summary
 ```
 
-### Linear mixed model
 
 ```{r}
 #| label: exp1-lmm-random-intercept
@@ -782,7 +780,7 @@ summary(exp1_aov)
 
 ```
 
-## Experiment 2 (Wheeler) data
+# Selected females have 50% (1.6 SD) and Selected males have 40% (1.3 SD) higher upwind flight ability than Wild Type lines in generation 550
 
 1. Compared selected (AA), control (CN) and wild-type lines (K45, N60) with more recent collection from wild than CN lines.
 2. (batches of flies introduced into standard wind tunnel and tested using decreasing velocity test
@@ -2507,6 +2505,9 @@ gg
 #| echo: false
 #| warning: false
 #| eval: true
+#| fig-width: 8
+#| fig-height: 11
+#| out-width: "100%"
 
 # lmm
 wing_metric_plot <- function(y_col = "area",
@@ -2638,7 +2639,7 @@ wing_metric_plot <- function(y_col = "area",
     scale_x_continuous(breaks = 1:3,
                        labels = c("23°", "26°", "29°")) +
     coord_cartesian(xlim = c(0.5, 3.5),
-                    ylim = c(min_y - add_y, max_y + 4*add_y)) +
+                    ylim = c(min_y - add_y, max_y + 5*add_y)) +
     theme_pubr() +
     theme(legend.position="none",
       axis.title.x = element_blank()) +
@@ -2789,7 +2790,7 @@ change_dt |>
 #| label: wing-vs-thorax
 #| echo: false
 #| warning: false
-#| eval: true
+#| eval: false
 
 line_col <- "line"
 fly[, line_id := line]

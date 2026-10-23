@@ -1596,7 +1596,7 @@ weight_plot <- function(data_in = d2013,
 #| warning: false
 #| eval: true
 
-d2013 <- d2013[line != "AL45"]
+#d2013 <- d2013[line != "AL45"]
 # get estimates of sigma using among vial variance
 # variance_among = sd^2 / n
 # root(n) * sd_among = sd_fly
@@ -2127,6 +2127,44 @@ wing_metrics <- function(x, y, hinge = 1, tip = 17) {
 
 ```
 
+```{r}
+#| label: radar-area
+#| echo: false
+#| warning: false
+#| eval: true
+
+# this is the area using LM 5 and 36 as the base following
+# Radar et al. 2026
+
+radar_area <- function(x, y, start = 5, end = 36, tip=17){
+
+  x0 <- x - x[start]
+  y0 <- y - y[start]
+
+  # theta <- atan2(y0[tip], x0[tip])
+  # xr <-  x0 * cos(theta) + y0 * sin(theta)
+  # yr <- -x0 * sin(theta) + y0 * cos(theta)
+
+  xr <- x0[start:end]
+  yr <- y0[start:end]
+
+  # next vertex around perimeter
+  x2 <- c(xr[-1], xr[1])
+  y2 <- c(yr[-1], yr[1])
+
+  cross <- xr * y2 - x2 * yr
+
+  # signed area
+  As <- sum(cross) / 2
+
+  # make formulas independent of clockwise/counterclockwise digitizing
+  s <- sign(As)
+  A <- abs(As)
+  return(A)
+}
+
+```
+
 ```{r }
 #| label: radial-area-distribution
 #| echo: false
@@ -2258,7 +2296,7 @@ list_path <- here(list_in)
 folder_list <- fread(list_path, sep = "\t",
                      header=FALSE)[[1]]
 
-aero_labels <- c("area", "wing_length","mean_chord", "aspect_ratio", "xbar", "ybar", "xbar_hat", "Ixx", "Iyy", "Ixy", "r2", "r2_hat", "r2_hat_sq")
+aero_labels <- c("area", "wing_length","mean_chord", "aspect_ratio", "xbar", "ybar", "xbar_hat", "Ixx", "Iyy", "Ixy", "r2", "r2_hat", "r2_hat_sq", "radar_area")
 radii <- c(.1, 0.2, 0.3)
 area_labels <- paste0("q", radii)
 area_prop_labels <- c("prop_prox")
@@ -2309,6 +2347,8 @@ for(i in 1:length(folder_list)){
                      unlist(fig_lm[, V2]))
     # compute wing metrics and save for all fly_id in folder
     aero_j <- wing_metrics(x = fig_lm[, V1],
+                           y = fig_lm[, V2])
+    aero_j$radar_area <- radar_area(x = fig_lm[, V1],
                            y = fig_lm[, V2])
 #    radial area distribution to compare to Harmon's thesis
     area_j <- radial_area_distribution(x = fig_lm[, V1],
@@ -2367,8 +2407,14 @@ wing[, treatment := ifelse(line == "A1" |
                            "SEL", "WT") |>
        factor(levels = c("WT", "SEL"))]
 wing[, temp := factor(temp)]
+# expand line names
+wing[line == "K4", line := "K45"]
+wing[line == "L4", line := "AL45"]
+wing[line == "N6", line := "N60"]
+wing[line == "A1", line := "AA1"]
+wing[line == "A2", line := "AA2"]
 wing[, line := factor(line,
-                         levels = c("K4","L4","N6","A1","A2"))]
+                         levels = c("K45","AL45","N60","AA1","AA2"))]
 wing[, rep := factor(rep,
                          levels = c("A","B"))]
 wing[, sex := factor(sex,
@@ -2387,7 +2433,7 @@ wing[, fly_id := as.numeric(fly_id)]
 #| warning: false
 #| eval: true
 
-fly <- merge(wing, ht, by = c("temp", "line", "sex", "rep", "fly_id"))
+fly <- merge(wing, ht, by = c("temp", "treatment", "line", "sex", "rep", "fly_id"))
 ```
 
 ## Compared to WT flies, the wings of Selected females are slightly shorter while the wings of Selected males have slightly more distal area
@@ -2823,6 +2869,235 @@ change_dt |>
   kable(digits = c(1)) |>
   kable_styling()
 # clipr::write_clip(change_dt)
+```
+
+## Compared to WT flies, Selected females have 41% and Selected males have 49% higher wing loading 
+
+```{r}
+#| label: wing-loading
+#| echo: false
+#| warning: false
+#| eval: true
+
+wing_area = wing[, .(per_wing_area = mean(area),
+                     per_wing_area2 = mean(radar_area)), by = .(temp, treatment, sex, line)]
+body_weight = d2013[, .(weight = mean(fly_weight)), by = .(treatment, sex, line)]
+
+wing_loading <- merge(wing_area[temp == "Y"], body_weight, by = c("treatment", "sex", "line"))
+wing_loading[, wing_area := per_wing_area * 2]
+wing_loading[, wing_area2 := per_wing_area2 * 2]
+wing_loading[, loading := weight / wing_area]
+wing_loading[, loading2 := weight / wing_area2 / 1000] # radar 2026
+wing_loading[, log10_area2 := log10(wing_area)]
+wing_loading[, log10_weight := log10(weight/1000)]
+wing_loading[, log10_loading2 := log10(loading2)]
+
+
+wing_loading_means <- 
+  wing_loading[, .(per_wing_area = mean(per_wing_area),
+                   weight = mean(weight)/1000,
+                   loading = mean(loading),
+                   loading2 = mean(loading2),
+                   log10_area2 = mean(log10_area2),
+                   log10_weight = mean(log10_weight),
+                   log10_loading2 = mean(log10_loading2)),
+               by = .(treatment, sex)]
+
+wing_loading_diffs <- data.table(
+  sex = c("F", "M"),
+  loading_WT = c(wing_loading_means[sex=="F" &
+                                      treatment == "WT", loading],
+                 wing_loading_means[sex=="M" &
+                                      treatment == "WT", loading]),
+  loading_SEL = c(wing_loading_means[sex=="F" &
+                                       treatment == "SEL", loading],
+                  wing_loading_means[sex=="M" &
+                                       treatment == "SEL", loading])
+)
+wing_loading_diffs[, d := loading_SEL - loading_WT]
+wing_loading_diffs[, d_perc := d / loading_WT * 100]
+
+```
+
+## Relative to 30 species of Drosophilid, wing area in Selected lines is extremely small and wing loading is exremely large
+
+```{r}
+#| label: radar-2026-data
+#| echo: false
+#| warning: false
+#| eval: true
+
+list_in <- "data/external/radar 2026 wing loading scaling.xlsx"
+list_path <- here(list_in)
+radar <- read_excel(list_path)
+
+```
+
+```{r}
+#| label: wing-area-vs-weight-plot
+#| echo: false
+#| warning: false
+#| eval: true
+
+# y = ax + b
+# b = y - ax
+slope.f <- 0.55 # Radar 2026
+slope.m <- 0.5
+intercept.f <- wing_loading_means[treatment == "WT" &
+                                    sex == "F", log10_area2] - wing_loading_means[treatment == "WT" &
+                                    sex == "F", log10_weight] * slope.f
+intercept.m <- wing_loading_means[treatment == "WT" &
+                                    sex == "M", log10_area2] - wing_loading_means[treatment == "WT" &
+                                    sex == "M", log10_weight] * slope.m
+  
+gg <- ggplot(data = wing_loading,
+             aes(x = log10_weight,
+                 y = log10_area2,
+                 color = treatment)) +
+  # radar 2026 data
+  geom_point(data = radar,
+             aes(x = log10_weight,
+                 y = log10_wing_area),
+             color = "gray") +
+  
+  # female scaling line from Radar 2026
+  # geom_abline(
+  #   slope = slope.f,
+  #   intercept = intercept.f,
+  #   linetype = "dashed",
+  #   color = "blue",
+  #   linewidth = 0.6
+  # ) +
+  # female scaling line from Radar 2026
+  # geom_abline(
+  #   slope = slope.m,
+  #   intercept = intercept.m,
+  #   linetype = "dashed",
+  #   color = "black",
+  #   linewidth = 0.6
+  # ) +
+
+  geom_segment(
+    aes(x = wing_loading_means[treatment == "WT" &
+                                    sex == "M", log10_weight],
+        y = wing_loading_means[treatment == "WT" &
+                                    sex == "M", log10_area2],
+        xend = wing_loading_means[treatment == "SEL" &
+                                    sex == "M", log10_weight],
+        yend = wing_loading_means[treatment == "SEL" &
+                                    sex == "M", log10_area2]),
+    color = "gray40",
+    linewidth = 0.6
+  ) +
+  geom_segment(
+    aes(x = wing_loading_means[treatment == "WT" &
+                                    sex == "F", log10_weight],
+        y = wing_loading_means[treatment == "WT" &
+                                    sex == "F", log10_area2],
+        xend = wing_loading_means[treatment == "SEL" &
+                                    sex == "F", log10_weight],
+        yend = wing_loading_means[treatment == "SEL" &
+                                    sex == "F", log10_area2]),
+    color = "gray40",
+    linewidth = 0.6
+  ) +
+  
+  # my data
+  geom_point(aes(shape = sex),
+             size = 3) +
+  
+  scale_color_manual(values = pal_okabe_ito) +
+  theme_pubr() +
+  labs(
+    x = expression(log[10] * "(Body mass, g)"),
+    y = expression(log[10] * "(Total wing area, mm"^2 * ")")
+  )
+
+gg
+```
+
+```{r}
+#| label: wing-loading-vs-weight-plot
+#| echo: false
+#| warning: false
+#| eval: true
+
+# y = ax + b
+# b = y - ax
+slope.f <- 0.44 # Radar 2026
+slope.m <- 0.5
+intercept.f <- wing_loading_means[treatment == "WT" &
+                                    sex == "F", log10_loading2] - wing_loading_means[treatment == "WT" &
+                                    sex == "F", log10_weight] * slope.f
+intercept.m <- wing_loading_means[treatment == "WT" &
+                                    sex == "M", log10_loading2] - wing_loading_means[treatment == "WT" &
+                                    sex == "M", log10_weight] * slope.m
+  
+gg <- ggplot(data = wing_loading,
+             aes(x = log10_weight,
+                 y = log10_loading2,
+                 color = treatment)) +
+  # radar 2026 data
+  geom_point(data = radar,
+             aes(x = log10_weight,
+                 y = log10_wing_loading),
+             color = "gray") +
+  
+  # female scaling line from Radar 2026
+  # geom_abline(
+  #   slope = slope.f,
+  #   intercept = intercept.f,
+  #   linetype = "dashed",
+  #   color = "blue",
+  #   linewidth = 0.6
+  # ) +
+  # female scaling line from Radar 2026
+  # geom_abline(
+  #   slope = slope.m,
+  #   intercept = intercept.m,
+  #   linetype = "dashed",
+  #   color = "black",
+  #   linewidth = 0.6
+  # ) +
+
+  geom_segment(
+    aes(x = wing_loading_means[treatment == "WT" &
+                                    sex == "M", log10_weight],
+        y = wing_loading_means[treatment == "WT" &
+                                    sex == "M", log10_loading2],
+        xend = wing_loading_means[treatment == "SEL" &
+                                    sex == "M", log10_weight],
+        yend = wing_loading_means[treatment == "SEL" &
+                                    sex == "M", log10_loading2]),
+    color = "gray40",
+    linewidth = 0.6
+  ) +
+  geom_segment(
+    aes(x = wing_loading_means[treatment == "WT" &
+                                    sex == "F", log10_weight],
+        y = wing_loading_means[treatment == "WT" &
+                                    sex == "F", log10_loading2],
+        xend = wing_loading_means[treatment == "SEL" &
+                                    sex == "F", log10_weight],
+        yend = wing_loading_means[treatment == "SEL" &
+                                    sex == "F", log10_loading2]),
+    color = "gray40",
+    linewidth = 0.6
+  ) +
+  
+  # my data
+  geom_point(aes(shape = sex),
+             size = 3) +
+  
+
+  scale_color_manual(values = pal_okabe_ito) +
+  theme_pubr() +
+  labs(
+    x = expression(log[10] * "(Body mass, g)"),
+    y = expression(log[10] * "(Wing loading, g/mm"^2 * ")")
+  )
+
+gg
 ```
 
 ```{r}
